@@ -1,0 +1,607 @@
+{
+  "name": "INV 3 - AI Extraction",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "invoice-extract",
+        "options": {}
+      },
+      "name": "Extract Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        208
+      ],
+      "webhookId": "invoice-extract-0001",
+      "id": "275ae7d8-495d-4692-b00d-b1e6be57c823"
+    },
+    {
+      "parameters": {
+        "url": "=https://cqktvuidwccrynrdtstn.supabase.co/rest/v1/documents?id=eq.{{ $json.body.document_id }}&select=*",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "options": {}
+      },
+      "name": "Get Document",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        224,
+        208
+      ],
+      "id": "343260b4-b9b0-4c97-92df-a93d2bb786ed",
+      "credentials": {
+        "supabaseApi": {
+          "id": "V1MI9JvfC1ehb0SB",
+          "name": "Supabase account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://cqktvuidwccrynrdtstn.supabase.co/rest/v1/extracted_text?document_id=eq.{{ $json.id }}&select=full_text,method",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "options": {}
+      },
+      "name": "Get Text",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        448,
+        208
+      ],
+      "alwaysOutputData": true,
+      "id": "a6314228-a05e-4abc-a54c-d151d2af5403",
+      "credentials": {
+        "supabaseApi": {
+          "id": "V1MI9JvfC1ehb0SB",
+          "name": "Supabase account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const text = ($json.full_text || '').trim();\nconst MAX = 60000;   // safety limit for very long documents (logged in the README as a known limit)\nreturn { json: { has_text: text.length > 0, text: text.slice(0, MAX), truncated: text.length > MAX, method: $json.method || null } };"
+      },
+      "name": "Prepare Text",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        208
+      ],
+      "id": "a23ba7c6-5cdf-4fed-8e6a-2fb803e4bd30"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "i1",
+              "leftValue": "={{ $json.has_text }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "Has text?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        880,
+        208
+      ],
+      "id": "89fbfbef-2514-473d-9ee0-1072b798c828"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Extract the invoice data from this document text:\n\n{{ $json.text }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "You are a precise invoice data extraction engine. You read the text of ONE business document and return a single JSON object, nothing else.\n\nRULES (follow strictly):\n1. Use ONLY information that is explicitly present in the text. NEVER guess, infer, calculate or invent a value. If a field is missing, unclear or ambiguous, set it to null.\n2. Copy numbers exactly as printed. Do NOT recompute subtotal, tax or total, and do NOT fix arithmetic errors you notice. Report what the document says.\n3. Numbers: plain numbers only (no currency symbols, no thousands separators). 1,234.50 -> 1234.50\n4. invoice_date: ISO format YYYY-MM-DD. If the date is ambiguous (for example 03/04/2026) or incomplete, set null.\n5. currency: 3-letter ISO code (GBP, USD, EUR...). Only set it if a symbol or code appears in the document, otherwise null.\n6. supplier_name is the company issuing the invoice (the seller). customer_name is the company being billed.\n7. line_items: every line in the document. Use null for any line value not shown. Do not add lines that are not there.\n8. The text may come from a spreadsheet (rows written as key: value) or from OCR; read it accordingly.\n9. confidence: for each of the 8 header fields give a number from 0 to 1 for how sure you are the value is correct (use 0 when the value is null).\n10. If the document is not an invoice, return all fields null, line_items [] and explain in notes.\n\nReturn exactly this JSON shape:\n{\"invoice_number\":null,\"invoice_date\":null,\"supplier_name\":null,\"customer_name\":null,\"subtotal\":null,\"tax\":null,\"total\":null,\"currency\":null,\n\"line_items\":[{\"description\":null,\"quantity\":null,\"unit_price\":null,\"line_total\":null}],\n\"confidence\":{\"invoice_number\":0,\"invoice_date\":0,\"supplier_name\":0,\"customer_name\":0,\"subtotal\":0,\"tax\":0,\"total\":0,\"currency\":0},\n\"notes\":\"\"}"
+            }
+          ]
+        },
+        "batching": {}
+      },
+      "name": "Extract Fields (LLM)",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.7,
+      "position": [
+        1120,
+        112
+      ],
+      "id": "a99b1df9-d921-439e-b5b7-18132c74bbe0"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "gpt-4o-mini"
+        },
+        "options": {
+          "temperature": 0
+        }
+      },
+      "name": "OpenAI Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        1120,
+        320
+      ],
+      "id": "d91b8dce-966c-407a-b0d0-42333e2d91b7",
+      "credentials": {
+        "openAiApi": {
+          "id": null,
+          "name": "",
+          "__aiGatewayManaged": true
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const raw = ($json.text || $json.output || '').toString();\nlet obj;\ntry {\n  const cleaned = raw.replace(/```json|```/g, '').trim();\n  obj = JSON.parse(cleaned.slice(cleaned.indexOf('{'), cleaned.lastIndexOf('}') + 1));\n} catch (e) {\n  return { json: { ok: false, message: 'Model did not return valid JSON' } };\n}\nconst num = v => {\n  if (v === null || v === undefined || v === '') return null;\n  const n = typeof v === 'number' ? v : Number(String(v).replace(/[^0-9.\\-]/g, ''));\n  return Number.isFinite(n) ? n : null;\n};\nconst str = v => (v === null || v === undefined || String(v).trim() === '' ? null : String(v).trim());\nlet date = str(obj.invoice_date);\nif (date && !(/^\\d{4}-\\d{2}-\\d{2}$/.test(date) && !isNaN(Date.parse(date)))) date = null;\nlet cur = str(obj.currency); cur = cur && /^[A-Za-z]{3}$/.test(cur) ? cur.toUpperCase() : null;\nconst items = Array.isArray(obj.line_items) ? obj.line_items.map(i => ({\n  description: str(i.description), quantity: num(i.quantity), unit_price: num(i.unit_price), line_total: num(i.line_total)\n})).filter(i => i.description || i.line_total !== null) : [];\nreturn { json: { ok: true, invoice: {\n  invoice_number: str(obj.invoice_number), invoice_date: date, supplier_name: str(obj.supplier_name),\n  customer_name: str(obj.customer_name), subtotal: num(obj.subtotal), tax: num(obj.tax), total: num(obj.total),\n  currency: cur, confidence: obj.confidence || {}, raw_json: obj }, line_items: items } };"
+      },
+      "name": "Parse & Normalise",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1408,
+        112
+      ],
+      "id": "b31a0aae-5c16-41c0-bd77-c43ad6c207d4"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "i1",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "Parsed OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1648,
+        112
+      ],
+      "id": "ca49b3e9-2fbe-4dab-b048-4cea46cddf36"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://cqktvuidwccrynrdtstn.supabase.co/rest/v1/invoices",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ document_id: $('Get Document').first().json.id, ...$json.invoice }) }}",
+        "options": {}
+      },
+      "name": "Save Invoice",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1888,
+        0
+      ],
+      "id": "034f26a2-09ae-4cf9-b6db-231178df9a88",
+      "credentials": {
+        "supabaseApi": {
+          "id": "V1MI9JvfC1ehb0SB",
+          "name": "Supabase account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://cqktvuidwccrynrdtstn.supabase.co/rest/v1/line_items",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('Parsed OK?').first().json.line_items.map((it, i) => ({ invoice_id: $json.id, position: i + 1, ...it }))) }}",
+        "options": {}
+      },
+      "name": "Save Line Items",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2128,
+        0
+      ],
+      "id": "242d97e3-89d3-4054-a6c8-3b0e0dd2f327",
+      "credentials": {
+        "supabaseApi": {
+          "id": "V1MI9JvfC1ehb0SB",
+          "name": "Supabase account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://cqktvuidwccrynrdtstn.supabase.co/rest/v1/processing_history",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ document_id: $('Get Document').first().json.id, step: 'llm_extraction', status: 'ok', detail: 'Extracted ' + $('Parsed OK?').first().json.line_items.length + ' line items' }) }}",
+        "options": {}
+      },
+      "name": "Log Extraction OK",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2368,
+        0
+      ],
+      "id": "84d07012-d792-43c4-a4ab-14fa118870de",
+      "credentials": {
+        "supabaseApi": {
+          "id": "V1MI9JvfC1ehb0SB",
+          "name": "Supabase account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://assignment01.app.n8n.cloud/webhook/invoice-validate",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ document_id: $('Get Document').first().json.id }) }}",
+        "options": {
+          "timeout": 3000
+        }
+      },
+      "name": "Trigger Validation (next stage)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2608,
+        0
+      ],
+      "id": "82b330d7-e1b7-42cf-81fa-f6782ee8c73d",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const m = $json.ok === false ? $json.message : 'No text available for this document (OCR missing or empty file)';\nreturn { json: { message: m } };"
+      },
+      "name": "Build Failure",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1888,
+        320
+      ],
+      "id": "aa302143-91b0-4fa8-9894-d1107c93e9e1"
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://cqktvuidwccrynrdtstn.supabase.co/rest/v1/documents?id=eq.{{ $('Get Document').first().json.id }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: 'failed', error_message: $json.message }) }}",
+        "options": {}
+      },
+      "name": "Mark Failed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2128,
+        320
+      ],
+      "id": "21b67e74-233d-4a44-81bf-a7634045260a",
+      "credentials": {
+        "supabaseApi": {
+          "id": "V1MI9JvfC1ehb0SB",
+          "name": "Supabase account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://cqktvuidwccrynrdtstn.supabase.co/rest/v1/processing_history",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ document_id: $('Get Document').first().json.id, step: 'llm_extraction', status: 'failed', detail: $('Build Failure').first().json.message }) }}",
+        "options": {}
+      },
+      "name": "Log Failed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2368,
+        320
+      ],
+      "id": "ee55828f-1125-4d73-95fa-ff5dda5bf77b",
+      "credentials": {
+        "supabaseApi": {
+          "id": "V1MI9JvfC1ehb0SB",
+          "name": "Supabase account 2"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Extract Webhook": {
+      "main": [
+        [
+          {
+            "node": "Get Document",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Document": {
+      "main": [
+        [
+          {
+            "node": "Get Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Text": {
+      "main": [
+        [
+          {
+            "node": "Prepare Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Text": {
+      "main": [
+        [
+          {
+            "node": "Has text?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has text?": {
+      "main": [
+        [
+          {
+            "node": "Extract Fields (LLM)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Fields (LLM)": {
+      "main": [
+        [
+          {
+            "node": "Parse & Normalise",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Extract Fields (LLM)",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse & Normalise": {
+      "main": [
+        [
+          {
+            "node": "Parsed OK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parsed OK?": {
+      "main": [
+        [
+          {
+            "node": "Save Invoice",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Invoice": {
+      "main": [
+        [
+          {
+            "node": "Save Line Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Line Items": {
+      "main": [
+        [
+          {
+            "node": "Log Extraction OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Extraction OK": {
+      "main": [
+        [
+          {
+            "node": "Trigger Validation (next stage)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Failure": {
+      "main": [
+        [
+          {
+            "node": "Mark Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Failed": {
+      "main": [
+        [
+          {
+            "node": "Log Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": true
+  },
+  "versionId": "f3719d05-4e44-40bf-a714-beb572435033",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "b4deb251f8d65ab13bdd5afbae9c1cfbe35e4235affa224dcc973fd084003ae4"
+  },
+  "nodeGroups": [],
+  "id": "BTjrAywybB8NqzPT",
+  "tags": []
+}

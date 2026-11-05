@@ -1,0 +1,988 @@
+{
+  "name": "INV 2 - Processing",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "invoice-process",
+        "options": {}
+      },
+      "name": "Process Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -352,
+        560
+      ],
+      "webhookId": "invoice-process-0001",
+      "id": "e6cb4a28-ff81-4822-8722-eefc6f8c3fdf"
+    },
+    {
+      "parameters": {
+        "url": "=https://cqktvuidwccrynrdtstn.supabase.co/rest/v1/documents?id=eq.{{ $json.body.document_id }}&select=*",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "options": {}
+      },
+      "name": "Get Document",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -128,
+        560
+      ],
+      "id": "3adc0309-4047-4d6b-be3f-1e5bc5dc6ce3",
+      "credentials": {
+        "supabaseApi": {
+          "id": "V1MI9JvfC1ehb0SB",
+          "name": "Supabase account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://cqktvuidwccrynrdtstn.supabase.co/rest/v1/documents?id=eq.{{ $json.id }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: 'processing', error_message: null, attempts: ($json.attempts || 0) + 1 }) }}",
+        "options": {}
+      },
+      "name": "Mark Processing",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        96,
+        560
+      ],
+      "id": "3e6b2d36-b900-4b74-94fe-598def79d923",
+      "credentials": {
+        "supabaseApi": {
+          "id": "V1MI9JvfC1ehb0SB",
+          "name": "Supabase account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://cqktvuidwccrynrdtstn.supabase.co/storage/v1/object/documents/{{ $json.storage_path }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "name": "Download File",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        320,
+        560
+      ],
+      "id": "6cd4f8f0-a5ab-4e6d-951e-0724fdf9db02",
+      "credentials": {
+        "supabaseApi": {
+          "id": "V1MI9JvfC1ehb0SB",
+          "name": "Supabase account 2"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "pdf0",
+                    "leftValue": "={{ $('Get Document').first().json.file_type }}",
+                    "rightValue": "pdf",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "or"
+              },
+              "renameOutput": true,
+              "outputKey": "pdf"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "image0",
+                    "leftValue": "={{ $('Get Document').first().json.file_type }}",
+                    "rightValue": "jpg",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  },
+                  {
+                    "id": "image1",
+                    "leftValue": "={{ $('Get Document').first().json.file_type }}",
+                    "rightValue": "png",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  },
+                  {
+                    "id": "image2",
+                    "leftValue": "={{ $('Get Document').first().json.file_type }}",
+                    "rightValue": "tiff",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "or"
+              },
+              "renameOutput": true,
+              "outputKey": "image"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "csv0",
+                    "leftValue": "={{ $('Get Document').first().json.file_type }}",
+                    "rightValue": "csv",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "or"
+              },
+              "renameOutput": true,
+              "outputKey": "csv"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "xlsx0",
+                    "leftValue": "={{ $('Get Document').first().json.file_type }}",
+                    "rightValue": "xlsx",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "or"
+              },
+              "renameOutput": true,
+              "outputKey": "xlsx"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "xls0",
+                    "leftValue": "={{ $('Get Document').first().json.file_type }}",
+                    "rightValue": "xls",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "or"
+              },
+              "renameOutput": true,
+              "outputKey": "xls"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Route by File Type",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        544,
+        256
+      ],
+      "id": "b14d1eb7-087b-4389-86e2-ca5fdba7e6f3"
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "options": {}
+      },
+      "name": "Extract PDF Text",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        768,
+        -256
+      ],
+      "id": "92a4020b-0ff5-4e2d-be0d-8be1245f7217",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const text = ($json.text || '').trim();\nconst pages = $json.numpages || 1;\nconst perPage = text.length / pages;\n// Fewer than ~40 characters per page means the PDF is a scan: it needs OCR.\nreturn { json: { method: perPage < 40 ? 'ocr_needed' : 'direct_pdf', text, page_count: pages } };"
+      },
+      "name": "Assess PDF Text",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        992,
+        -256
+      ],
+      "id": "57966eb8-d21e-40ca-b06d-f83c89a61a26"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "return { json: { method: 'ocr_needed', text: '', page_count: 1 } };"
+      },
+      "name": "Mark Image for OCR",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1328,
+        112
+      ],
+      "id": "59f3ae66-d7c9-4716-9a21-6cf6756fe502"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "name": "Extract CSV",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        768,
+        272
+      ],
+      "id": "5c048b7a-7d31-43fd-a728-55f4f792b591",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "operation": "xls",
+        "options": {}
+      },
+      "name": "Extract XLS",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        768,
+        656
+      ],
+      "id": "368a35eb-71b6-4e2a-987e-757417fbefe6",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $input.all().map(i => i.json);\nconst text = rows.map(r => Object.entries(r).map(([k, v]) => k + ': ' + v).join(' | ')).join('\\n');\nreturn [{ json: { method: 'spreadsheet', text, page_count: 1, rows: rows.length } }];"
+      },
+      "name": "Build Table Text",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        992,
+        272
+      ],
+      "id": "47bbf892-cf0d-4e82-a25d-d6a52495b38f"
+    },
+    {
+      "parameters": {
+        "operation": "xlsx",
+        "options": {
+          "headerRow": false
+        }
+      },
+      "name": "Extract XLSX Sheet 1",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        768,
+        464
+      ],
+      "id": "ff9c409e-7351-4a2f-a43a-20f59750ba6a",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $input.all().map(i => i.json);\nconst text1 = rows.map(r => Object.entries(r).map(([k, v]) => k + ': ' + v).join(' | ')).join('\\n');\nreturn [{ json: { text1 }, binary: $('Download File').first().binary }];"
+      },
+      "name": "Collect Sheet 1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        992,
+        560
+      ],
+      "id": "b2712b1f-5fdd-4010-98d9-1f6eff9c0a90"
+    },
+    {
+      "parameters": {
+        "operation": "xlsx",
+        "options": {
+          "sheetName": "Line Items"
+        }
+      },
+      "name": "Extract XLSX Line Items",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        1216,
+        560
+      ],
+      "id": "4c1f9bfb-6c19-42f4-a40f-f40a0ec145bf",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const prev = $('Collect Sheet 1').first().json.text1;\nconst rows = $input.all().map(i => i.json).filter(r => !r.error);\nconst lines = rows.map(r => Object.entries(r).map(([k, v]) => k + ': ' + v).join(' | ')).join('\\n');\nconst text = 'SHEET 1:\\n' + prev + (lines ? '\\n\\nSHEET \"Line Items\":\\n' + lines : '');\nreturn [{ json: { method: 'spreadsheet', text, page_count: 1 } }];"
+      },
+      "name": "Build Excel Text",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1440,
+        560
+      ],
+      "id": "405cd6f0-ae86-49c4-950d-0e385fc32cf5"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "o1",
+              "leftValue": "={{ $json.method }}",
+              "rightValue": "ocr_needed",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "Needs OCR?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1664,
+        160
+      ],
+      "id": "19a9a93b-e4bc-4c6f-81bd-0070127e9690"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://cqktvuidwccrynrdtstn.supabase.co/rest/v1/processing_history",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ document_id: $('Get Document').first().json.id, step: 'text_extraction', status: 'ok', detail: 'No extractable text: OCR required' }) }}",
+        "options": {}
+      },
+      "name": "Log OCR Required",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1888,
+        64
+      ],
+      "id": "af62a859-85eb-4b1e-ac58-74c40dc01df9",
+      "credentials": {
+        "supabaseApi": {
+          "id": "V1MI9JvfC1ehb0SB",
+          "name": "Supabase account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://cqktvuidwccrynrdtstn.supabase.co/rest/v1/extracted_text?on_conflict=document_id",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "resolution=merge-duplicates,return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ document_id: $('Get Document').first().json.id, method: $json.method, full_text: ($json.text || '').replace(/\\u0000/g, '') }) }}",
+        "options": {}
+      },
+      "name": "Save Extracted Text",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1888,
+        256
+      ],
+      "id": "caeba0aa-b15b-4bf7-af3a-aeaa10a823d5",
+      "credentials": {
+        "supabaseApi": {
+          "id": "V1MI9JvfC1ehb0SB",
+          "name": "Supabase account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://cqktvuidwccrynrdtstn.supabase.co/rest/v1/processing_history",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ document_id: $('Get Document').first().json.id, step: 'text_extraction', status: 'ok', detail: 'Method: ' + $('Needs OCR?').first().json.method + ', pages: ' + $('Needs OCR?').first().json.page_count }) }}",
+        "options": {}
+      },
+      "name": "Log Text Extracted",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2112,
+        256
+      ],
+      "id": "ead9f880-cfdb-48c0-9f4f-94c77af0fd03",
+      "credentials": {
+        "supabaseApi": {
+          "id": "V1MI9JvfC1ehb0SB",
+          "name": "Supabase account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://assignment01.app.n8n.cloud/webhook/invoice-extract",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ document_id: $('Get Document').first().json.id }) }}",
+        "options": {
+          "timeout": 3000
+        }
+      },
+      "name": "Trigger Extraction (next stage)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2336,
+        256
+      ],
+      "id": "5e223ef7-0d1b-4b65-817c-dcb2fd8e82ba",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const raw = $json.error;\nconst msg = (raw && raw.message) ? raw.message : (typeof raw === 'string' ? raw : 'File could not be read (corrupted or unsupported content)');\nreturn { json: { message: String(msg).slice(0, 500) } };"
+      },
+      "name": "Build Failure",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        992,
+        -64
+      ],
+      "id": "2104f86b-157e-41db-9528-1ac2a6529a45"
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://cqktvuidwccrynrdtstn.supabase.co/rest/v1/documents?id=eq.{{ $('Get Document').first().json.id }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: 'failed', error_message: $json.message }) }}",
+        "options": {}
+      },
+      "name": "Mark Failed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1216,
+        -64
+      ],
+      "id": "82d0accf-e53b-4523-b6cb-89cd800a06ac",
+      "credentials": {
+        "supabaseApi": {
+          "id": "V1MI9JvfC1ehb0SB",
+          "name": "Supabase account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://cqktvuidwccrynrdtstn.supabase.co/rest/v1/processing_history",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ document_id: $('Get Document').first().json.id, step: 'text_extraction', status: 'failed', detail: $('Build Failure').first().json.message }) }}",
+        "options": {}
+      },
+      "name": "Log Failed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1440,
+        -64
+      ],
+      "id": "d62daf91-f797-4a06-ac65-087a129ff64b",
+      "credentials": {
+        "supabaseApi": {
+          "id": "V1MI9JvfC1ehb0SB",
+          "name": "Supabase account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://assignment01.app.n8n.cloud/webhook/invoice-ocr",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ document_id: $('Get Document').first().json.id }) }}",
+        "options": {
+          "timeout": 3000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        2112,
+        64
+      ],
+      "id": "c7cf4607-a298-466d-8545-cadf6acec9b3",
+      "name": "HTTP Request",
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Process Webhook": {
+      "main": [
+        [
+          {
+            "node": "Get Document",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Document": {
+      "main": [
+        [
+          {
+            "node": "Mark Processing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Processing": {
+      "main": [
+        [
+          {
+            "node": "Download File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download File": {
+      "main": [
+        [
+          {
+            "node": "Route by File Type",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by File Type": {
+      "main": [
+        [
+          {
+            "node": "Extract PDF Text",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Image for OCR",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Extract CSV",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Extract XLSX Sheet 1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Extract XLS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract PDF Text": {
+      "main": [
+        [
+          {
+            "node": "Assess PDF Text",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Assess PDF Text": {
+      "main": [
+        [
+          {
+            "node": "Needs OCR?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Image for OCR": {
+      "main": [
+        [
+          {
+            "node": "Needs OCR?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract CSV": {
+      "main": [
+        [
+          {
+            "node": "Build Table Text",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract XLS": {
+      "main": [
+        [
+          {
+            "node": "Build Table Text",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Table Text": {
+      "main": [
+        [
+          {
+            "node": "Needs OCR?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract XLSX Sheet 1": {
+      "main": [
+        [
+          {
+            "node": "Collect Sheet 1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Collect Sheet 1": {
+      "main": [
+        [
+          {
+            "node": "Extract XLSX Line Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract XLSX Line Items": {
+      "main": [
+        [
+          {
+            "node": "Build Excel Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Excel Text": {
+      "main": [
+        [
+          {
+            "node": "Needs OCR?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Needs OCR?": {
+      "main": [
+        [
+          {
+            "node": "Log OCR Required",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Save Extracted Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Extracted Text": {
+      "main": [
+        [
+          {
+            "node": "Log Text Extracted",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Text Extracted": {
+      "main": [
+        [
+          {
+            "node": "Trigger Extraction (next stage)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Failure": {
+      "main": [
+        [
+          {
+            "node": "Mark Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Failed": {
+      "main": [
+        [
+          {
+            "node": "Log Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log OCR Required": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": true
+  },
+  "versionId": "08a6d52d-557a-4827-bb47-933b2caddefe",
+  "meta": {
+    "instanceId": "b4deb251f8d65ab13bdd5afbae9c1cfbe35e4235affa224dcc973fd084003ae4"
+  },
+  "nodeGroups": [],
+  "id": "GVmPbvH2AbEE4fzx",
+  "tags": []
+}

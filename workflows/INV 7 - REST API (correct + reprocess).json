@@ -1,0 +1,871 @@
+{
+  "name": "INV 7 - REST API (correct + reprocess)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "PATCH",
+        "path": "api-correct",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "name": "Correct Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "api-correct-0001",
+      "id": "05e7a8fa-93d7-450a-ae4c-66ec7521421a",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "w4daF7r80n9W3NVZ",
+          "name": "API Key Header"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const b = $json.body || {};\nconst id = String(b.invoice_id || '');\nconst f = (b.fields && typeof b.fields === 'object') ? b.fields : {};\nconst fail = m => ({ json: { valid: false, status_code: 400, body: { error: m } } });\nif (!/^[0-9a-fA-F-]{36}$/.test(id)) return fail('invoice_id is required (uuid)');\nconst changes = {};\nfor (const k of ['invoice_number','supplier_name','customer_name']) if (k in f) { const s = f[k] === null ? '' : String(f[k]).trim(); changes[k] = s === '' ? null : s; }\nfor (const k of ['subtotal','tax','total']) if (k in f) {\n  if (f[k] === null || f[k] === '') changes[k] = null;\n  else { const n = Number(f[k]); if (!Number.isFinite(n)) return fail(k + ' must be a number'); changes[k] = n; } }\nif ('invoice_date' in f) { const d = f.invoice_date;\n  if (d === null || d === '') changes.invoice_date = null;\n  else if (/^\\d{4}-\\d{2}-\\d{2}$/.test(d) && !isNaN(Date.parse(d))) changes.invoice_date = d;\n  else return fail('invoice_date must be YYYY-MM-DD'); }\nif ('currency' in f) { const c = f.currency;\n  if (c === null || c === '') changes.currency = null;\n  else if (/^[A-Za-z]{3}$/.test(c)) changes.currency = c.toUpperCase();\n  else return fail('currency must be a 3-letter code'); }\nif (!Object.keys(changes).length) return fail('No editable fields supplied');\nreturn { json: { valid: true, invoice_id: id, changes } };"
+      },
+      "name": "Correct Validate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ],
+      "id": "b65158ce-93be-456b-ad33-0f4c2d8f760f"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "Input valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        464,
+        0
+      ],
+      "id": "e5d6118b-3f8a-4713-b077-825492177113"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.body }}",
+        "options": {
+          "responseCode": "={{ $json.status_code }}"
+        }
+      },
+      "name": "Correct Respond Error 1",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        704,
+        208
+      ],
+      "id": "b3099c68-b783-41aa-86fa-d64741dc567c"
+    },
+    {
+      "parameters": {
+        "url": "=https://cqktvuidwccrynrdtstn.supabase.co/rest/v1/invoices?id=eq.{{ $json.invoice_id }}&select=*",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "name": "Get Invoice to Correct",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        704,
+        0
+      ],
+      "alwaysOutputData": true,
+      "id": "9c77664b-4506-4cbf-ad9a-27bd1ee9351f",
+      "credentials": {
+        "supabaseApi": {
+          "id": "V1MI9JvfC1ehb0SB",
+          "name": "Supabase account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const v = $('Correct Validate').first().json;\nconst rows = $input.all().map(i => i.json).filter(r => r && r.id);\nif (!rows.length) return [{ json: { ok: false, status_code: 404, body: { error: 'Invoice not found' } } }];\nconst inv = rows[0];\nconst corrections = [], patch = {};\nconst conf = Object.assign({}, inv.confidence || {});\nfor (const [f, nv] of Object.entries(v.changes)) {\n  const ov = inv[f];\n  const same = (ov === null || ov === undefined) ? (nv === null) : (nv !== null && (String(ov) === String(nv) || Number(ov) === nv));\n  if (same) continue;\n  patch[f] = nv; conf[f] = 1;   // a human confirmed this value\n  corrections.push({ invoice_id: inv.id, field: f, old_value: (ov === null || ov === undefined) ? null : String(ov), new_value: nv === null ? null : String(nv) });\n}\nif (!corrections.length) return [{ json: { ok: false, status_code: 200, body: { message: 'No changes: values already match' } } }];\npatch.confidence = conf; patch.needs_review = false;\nreturn [{ json: { ok: true, invoice_id: inv.id, document_id: inv.document_id, patch, corrections } }];"
+      },
+      "name": "Build Correction",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        928,
+        0
+      ],
+      "id": "327d81e5-2d8b-4bb9-bf09-a7ccefeacece"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "Has changes?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1152,
+        0
+      ],
+      "id": "acaa2bc6-03a7-4243-ae6a-93b6cbb3188f"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.body }}",
+        "options": {
+          "responseCode": "={{ $json.status_code }}"
+        }
+      },
+      "name": "Correct Respond Error 2",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1392,
+        208
+      ],
+      "id": "21ec9eb3-8218-4e1f-b4f6-30bb8ccce5b9"
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://cqktvuidwccrynrdtstn.supabase.co/rest/v1/invoices?id=eq.{{ $('Build Correction').first().json.invoice_id }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('Build Correction').first().json.patch) }}",
+        "options": {}
+      },
+      "name": "Patch Invoice",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1392,
+        0
+      ],
+      "id": "c7ba2b30-3f59-4bea-bb8d-843c8fdd4b4e",
+      "credentials": {
+        "supabaseApi": {
+          "id": "V1MI9JvfC1ehb0SB",
+          "name": "Supabase account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://cqktvuidwccrynrdtstn.supabase.co/rest/v1/corrections",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('Build Correction').first().json.corrections) }}",
+        "options": {}
+      },
+      "name": "Save Corrections",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1616,
+        0
+      ],
+      "id": "af2fa2a4-5939-42ba-b1b0-bf3067032749",
+      "credentials": {
+        "supabaseApi": {
+          "id": "V1MI9JvfC1ehb0SB",
+          "name": "Supabase account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://cqktvuidwccrynrdtstn.supabase.co/rest/v1/processing_history",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ document_id: $('Build Correction').first().json.document_id, step: 'correction', status: 'ok', detail: 'Manual correction: ' + $('Build Correction').first().json.corrections.map(c => c.field).join(', ') }) }}",
+        "options": {}
+      },
+      "name": "Log Correction",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1840,
+        0
+      ],
+      "id": "8ec407fe-285b-44c5-ac9c-920ae9bce097",
+      "credentials": {
+        "supabaseApi": {
+          "id": "V1MI9JvfC1ehb0SB",
+          "name": "Supabase account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, invoice_id: $('Build Correction').first().json.invoice_id, document_id: $('Build Correction').first().json.document_id, corrected_fields: $('Build Correction').first().json.corrections.map(c => c.field), message: 'Saved. Validation is re-running.' } }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "name": "Correct Respond OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2080,
+        0
+      ],
+      "id": "edf3de88-5416-4165-9ee8-07fcea5b4678"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://assignment01.app.n8n.cloud/webhook/invoice-validate",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ document_id: $('Build Correction').first().json.document_id }) }}",
+        "options": {
+          "timeout": 3000
+        }
+      },
+      "name": "Re-run Validation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2304,
+        0
+      ],
+      "id": "6bcbbcca-40f6-4c7d-862d-882a0fcb2c53",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "api-reprocess",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "name": "Reprocess Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        464
+      ],
+      "webhookId": "api-reprocess-0001",
+      "id": "2a6b8891-f23c-4623-a6eb-9fdf8d2427df",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "w4daF7r80n9W3NVZ",
+          "name": "API Key Header"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://cqktvuidwccrynrdtstn.supabase.co/rest/v1/documents?id=eq.{{ /^[0-9a-fA-F-]{36}$/.test(($json.body || {}).document_id || '') ? $json.body.document_id : '00000000-0000-0000-0000-000000000000' }}&select=id,filename,status",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "name": "Get Document to Reprocess",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        240,
+        464
+      ],
+      "alwaysOutputData": true,
+      "id": "6eceecf1-200a-48f2-a6b9-90463e7b06ef",
+      "credentials": {
+        "supabaseApi": {
+          "id": "V1MI9JvfC1ehb0SB",
+          "name": "Supabase account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $input.all().map(i => i.json).filter(r => r && r.id);\nif (!rows.length) return [{ json: { ok: false, status_code: 404, body: { error: 'Document not found' } } }];\nconst d = rows[0];\nif (!['failed','needs_review','completed'].includes(d.status))\n  return [{ json: { ok: false, status_code: 409, body: { error: 'Document is ' + d.status + ' right now. Try again when it finishes.' } } }];\nreturn [{ json: { ok: true, document_id: d.id, filename: d.filename, previous_status: d.status } }];"
+      },
+      "name": "Reprocess Check",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        464,
+        464
+      ],
+      "id": "cd2a4016-cb17-44f0-bed6-598a9b27ffe3"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "Can reprocess?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        704,
+        464
+      ],
+      "id": "e3c86545-da5d-409d-971a-d2c04fd70ded"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.body }}",
+        "options": {
+          "responseCode": "={{ $json.status_code }}"
+        }
+      },
+      "name": "Reprocess Respond Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        928,
+        672
+      ],
+      "id": "4babdd97-c43e-4013-820e-e871e0cf7e1e"
+    },
+    {
+      "parameters": {
+        "method": "DELETE",
+        "url": "=https://cqktvuidwccrynrdtstn.supabase.co/rest/v1/invoices?document_id=eq.{{ $('Reprocess Check').first().json.document_id }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Delete Old Invoices",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        928,
+        464
+      ],
+      "id": "b334f2cd-2b18-4f3a-9a15-dff447523bbe",
+      "credentials": {
+        "supabaseApi": {
+          "id": "V1MI9JvfC1ehb0SB",
+          "name": "Supabase account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "DELETE",
+        "url": "=https://cqktvuidwccrynrdtstn.supabase.co/rest/v1/validation_errors?document_id=eq.{{ $('Reprocess Check').first().json.document_id }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Delete Old Errors",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1152,
+        464
+      ],
+      "id": "255a4692-b899-43f2-b96c-e916a1e34a00",
+      "credentials": {
+        "supabaseApi": {
+          "id": "V1MI9JvfC1ehb0SB",
+          "name": "Supabase account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://cqktvuidwccrynrdtstn.supabase.co/rest/v1/documents?id=eq.{{ $('Reprocess Check').first().json.document_id }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: 'queued', error_message: null }) }}",
+        "options": {}
+      },
+      "name": "Reset Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1392,
+        464
+      ],
+      "id": "b3919324-4d38-4cb4-8462-f5c7c67c6bf4",
+      "credentials": {
+        "supabaseApi": {
+          "id": "V1MI9JvfC1ehb0SB",
+          "name": "Supabase account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://cqktvuidwccrynrdtstn.supabase.co/rest/v1/processing_history",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ document_id: $('Reprocess Check').first().json.document_id, step: 'reprocess', status: 'ok', detail: 'Reprocess requested (was ' + $('Reprocess Check').first().json.previous_status + ')' }) }}",
+        "options": {}
+      },
+      "name": "Log Reprocess",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1616,
+        464
+      ],
+      "id": "09237b87-66df-4777-aca7-8633bc2962a5",
+      "credentials": {
+        "supabaseApi": {
+          "id": "V1MI9JvfC1ehb0SB",
+          "name": "Supabase account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { document_id: $('Reprocess Check').first().json.document_id, status: 'queued' } }}",
+        "options": {
+          "responseCode": 202
+        }
+      },
+      "name": "Reprocess Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1840,
+        464
+      ],
+      "id": "2b43f0bb-cf8a-4c55-8f0b-d8d748dcf9b0"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://assignment01.app.n8n.cloud/webhook/invoice-process",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ document_id: $('Reprocess Check').first().json.document_id }) }}",
+        "options": {
+          "timeout": 3000
+        }
+      },
+      "name": "Trigger Processing Again",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2080,
+        464
+      ],
+      "id": "e5da9b48-22ee-44c1-8f3d-c61c7d1ae364",
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Correct Webhook": {
+      "main": [
+        [
+          {
+            "node": "Correct Validate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Correct Validate": {
+      "main": [
+        [
+          {
+            "node": "Input valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Invoice to Correct": {
+      "main": [
+        [
+          {
+            "node": "Build Correction",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Correction": {
+      "main": [
+        [
+          {
+            "node": "Has changes?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Patch Invoice": {
+      "main": [
+        [
+          {
+            "node": "Save Corrections",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Corrections": {
+      "main": [
+        [
+          {
+            "node": "Log Correction",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Correction": {
+      "main": [
+        [
+          {
+            "node": "Correct Respond OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Correct Respond OK": {
+      "main": [
+        [
+          {
+            "node": "Re-run Validation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Input valid?": {
+      "main": [
+        [
+          {
+            "node": "Get Invoice to Correct",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Correct Respond Error 1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has changes?": {
+      "main": [
+        [
+          {
+            "node": "Patch Invoice",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Correct Respond Error 2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reprocess Webhook": {
+      "main": [
+        [
+          {
+            "node": "Get Document to Reprocess",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Document to Reprocess": {
+      "main": [
+        [
+          {
+            "node": "Reprocess Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reprocess Check": {
+      "main": [
+        [
+          {
+            "node": "Can reprocess?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete Old Invoices": {
+      "main": [
+        [
+          {
+            "node": "Delete Old Errors",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete Old Errors": {
+      "main": [
+        [
+          {
+            "node": "Reset Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reset Status": {
+      "main": [
+        [
+          {
+            "node": "Log Reprocess",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Reprocess": {
+      "main": [
+        [
+          {
+            "node": "Reprocess Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reprocess Respond": {
+      "main": [
+        [
+          {
+            "node": "Trigger Processing Again",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Can reprocess?": {
+      "main": [
+        [
+          {
+            "node": "Delete Old Invoices",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reprocess Respond Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": true
+  },
+  "versionId": "bc02e946-7a1e-4bb4-a18c-782a26b32420",
+  "meta": {
+    "aiBuilderAssisted": true,
+    "builderVariant": "mcp",
+    "instanceId": "b4deb251f8d65ab13bdd5afbae9c1cfbe35e4235affa224dcc973fd084003ae4"
+  },
+  "nodeGroups": [],
+  "id": "D2CLfh6sy3dVq4PU",
+  "tags": []
+}

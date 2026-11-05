@@ -1,0 +1,447 @@
+{
+  "name": "INV 6 - REST API (read)",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "api-documents",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "name": "List Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "api-documents-0001",
+      "id": "8cb92746-ab15-47b9-b9cc-dafe33f4b169",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "w4daF7r80n9W3NVZ",
+          "name": "API Key Header"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const SB = 'https://cqktvuidwccrynrdtstn.supabase.co';\nconst q = $json.query || {};\nconst clean = s => String(s || '').replace(/[^\\p{L}\\p{N}\\s._@-]/gu, '').trim().slice(0, 100);\nconst statuses = ['queued','processing','completed','needs_review','failed'];\nconst limit = Math.min(Math.max(parseInt(q.limit) || 20, 1), 100);\nconst offset = Math.max(parseInt(q.offset) || 0, 0);\nconst isDate = d => /^\\d{4}-\\d{2}-\\d{2}$/.test(d || '');\nlet inv = 'invoices(invoice_number,invoice_date,supplier_name,customer_name,total,currency,needs_review)';\nconst p = [];\nif (statuses.includes(q.status)) p.push('status=eq.' + q.status);\nconst sup = clean(q.supplier);\nif (sup) { inv = inv.replace('invoices(', 'invoices!inner('); p.push('invoices.supplier_name=ilike.*' + encodeURIComponent(sup) + '*'); }\nif (isDate(q.from)) { inv = inv.replace('invoices(', 'invoices!inner('); p.push('invoices.invoice_date=gte.' + q.from); }\nif (isDate(q.to))   { inv = inv.replace('invoices(', 'invoices!inner('); p.push('invoices.invoice_date=lte.' + q.to); }\nlet sel = '*,' + inv;\nconst kw = clean(q.q);\nif (kw) { sel += ',extracted_text!inner(document_id)'; p.push('extracted_text.fts=plfts(simple).' + encodeURIComponent(kw)); }\nconst url = SB + '/rest/v1/documents?select=' + sel + '&' + p.join('&') + '&order=created_at.desc&limit=' + limit + '&offset=' + offset;\nreturn { json: { url } };"
+      },
+      "name": "List Build Query",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ],
+      "id": "1640716d-ec32-451a-a1f8-7afcb6a7a1e0"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "name": "List Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        0
+      ],
+      "alwaysOutputData": true,
+      "id": "d8da8838-b1ea-4eaf-af27-62c88c3ae909",
+      "credentials": {
+        "supabaseApi": {
+          "id": "V1MI9JvfC1ehb0SB",
+          "name": "Supabase account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $input.all().map(i => i.json).filter(r => r && Object.keys(r).length);\nconst isErr = rows.length === 1 && rows[0].code && rows[0].message;\nif (isErr) return [{ json: { status_code: 500, body: { error: 'Database query failed', detail: rows[0].message } } }];\nreturn [{ json: { status_code: 200, body: { count: rows.length, data: rows } } }];"
+      },
+      "name": "List Shape",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        0
+      ],
+      "id": "ddfaaee5-8300-417f-8594-09a781be5f7b"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.body }}",
+        "options": {
+          "responseCode": "={{ $json.status_code }}"
+        }
+      },
+      "name": "List Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        960,
+        0
+      ],
+      "id": "4b1909c1-4e63-4ebe-9561-f5cdfa96c3ad"
+    },
+    {
+      "parameters": {
+        "path": "api-document",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "name": "Status Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        224
+      ],
+      "webhookId": "api-document-0001",
+      "id": "dda6659c-f148-41f0-86ce-ce6f5a44c02e",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "w4daF7r80n9W3NVZ",
+          "name": "API Key Header"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const SB = 'https://cqktvuidwccrynrdtstn.supabase.co';\nconst id = String(($json.query||{}).id||'');\nconst ok = /^[0-9a-fA-F-]{36}$/.test(id);\nconst safe = ok ? id : '00000000-0000-0000-0000-000000000000';\nconst url = SB + '/rest/v1/documents?id=eq.' + safe + '&select=id,filename,file_type,status,error_message,attempts,created_at,updated_at,processing_history(step,status,detail,created_at)&processing_history.order=created_at.asc';\nreturn { json: { url } };"
+      },
+      "name": "Status Build Query",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        224
+      ],
+      "id": "8ea45555-a112-4238-876b-5553d739f49b"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "name": "Status Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        224
+      ],
+      "alwaysOutputData": true,
+      "id": "693cc7d5-14a8-4b81-96b5-afa84087225a",
+      "credentials": {
+        "supabaseApi": {
+          "id": "V1MI9JvfC1ehb0SB",
+          "name": "Supabase account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $input.all().map(i => i.json).filter(r => r && Object.keys(r).length);\nconst isErr = rows.length === 1 && rows[0].code && rows[0].message;\nif (isErr) return [{ json: { status_code: 500, body: { error: 'Database query failed', detail: rows[0].message } } }];\nif (rows.length === 0) return [{ json: { status_code: 404, body: { error: 'Document not found' } } }];\nreturn [{ json: { status_code: 200, body: rows[0] } }];"
+      },
+      "name": "Status Shape",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        224
+      ],
+      "id": "4106b225-dcee-48a3-8f90-eabcf9d91e84"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.body }}",
+        "options": {
+          "responseCode": "={{ $json.status_code }}"
+        }
+      },
+      "name": "Status Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        960,
+        224
+      ],
+      "id": "1643f7f7-1df9-4744-a27e-c86c295bcb33"
+    },
+    {
+      "parameters": {
+        "path": "api-result",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "name": "Result Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        448
+      ],
+      "webhookId": "api-result-0001",
+      "id": "cfc07bda-dbd2-48f8-a513-40ee455159bc",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "w4daF7r80n9W3NVZ",
+          "name": "API Key Header"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const SB = 'https://cqktvuidwccrynrdtstn.supabase.co';\nconst id = String(($json.query||{}).id||'');\nconst ok = /^[0-9a-fA-F-]{36}$/.test(id);\nconst safe = ok ? id : '00000000-0000-0000-0000-000000000000';\nconst url = SB + '/rest/v1/documents?id=eq.' + safe + '&select=id,filename,file_type,status,error_message,invoices(*,line_items(*)),validation_errors(*)&invoices.order=created_at.desc&invoices.line_items.order=position.asc&validation_errors.order=created_at.asc';\nreturn { json: { url } };"
+      },
+      "name": "Result Build Query",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        448
+      ],
+      "id": "494d8068-5325-4c55-aa27-65a8c393c862"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "name": "Result Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        448
+      ],
+      "alwaysOutputData": true,
+      "id": "248a3a38-abf4-432a-b8a5-4d6b5d932be5",
+      "credentials": {
+        "supabaseApi": {
+          "id": "V1MI9JvfC1ehb0SB",
+          "name": "Supabase account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $input.all().map(i => i.json).filter(r => r && Object.keys(r).length);\nconst isErr = rows.length === 1 && rows[0].code && rows[0].message;\nif (isErr) return [{ json: { status_code: 500, body: { error: 'Database query failed', detail: rows[0].message } } }];\nif (rows.length === 0) return [{ json: { status_code: 404, body: { error: 'Document not found' } } }];\nreturn [{ json: { status_code: 200, body: rows[0] } }];"
+      },
+      "name": "Result Shape",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        448
+      ],
+      "id": "172fb809-3024-44c3-a404-ca6f16cff172"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.body }}",
+        "options": {
+          "responseCode": "={{ $json.status_code }}"
+        }
+      },
+      "name": "Result Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        960,
+        448
+      ],
+      "id": "e2b53a55-e365-43e2-a980-b63cbd7fd457"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "List Webhook": {
+      "main": [
+        [
+          {
+            "node": "List Build Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List Build Query": {
+      "main": [
+        [
+          {
+            "node": "List Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List Supabase": {
+      "main": [
+        [
+          {
+            "node": "List Shape",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List Shape": {
+      "main": [
+        [
+          {
+            "node": "List Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Status Webhook": {
+      "main": [
+        [
+          {
+            "node": "Status Build Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Status Build Query": {
+      "main": [
+        [
+          {
+            "node": "Status Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Status Supabase": {
+      "main": [
+        [
+          {
+            "node": "Status Shape",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Status Shape": {
+      "main": [
+        [
+          {
+            "node": "Status Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Result Webhook": {
+      "main": [
+        [
+          {
+            "node": "Result Build Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Result Build Query": {
+      "main": [
+        [
+          {
+            "node": "Result Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Result Supabase": {
+      "main": [
+        [
+          {
+            "node": "Result Shape",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Result Shape": {
+      "main": [
+        [
+          {
+            "node": "Result Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": true
+  },
+  "versionId": "448ac864-8504-4ef1-83c5-1c0a739e1dc3",
+  "meta": {
+    "instanceId": "b4deb251f8d65ab13bdd5afbae9c1cfbe35e4235affa224dcc973fd084003ae4"
+  },
+  "nodeGroups": [],
+  "id": "M75RFpcU79NlzvVM",
+  "tags": []
+}

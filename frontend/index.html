@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Document Intelligence</title>
+<style>
+:root{--ink:#1d2433;--mut:#5b6573;--line:#dfe3e8;--bg:#f6f7f8;--card:#fff;--acc:#0b6e6e;--acc2:#e3f2f1}
+*{box-sizing:border-box}body{margin:0;font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:var(--ink);background:var(--bg)}
+header{background:var(--card);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:24px;padding:0 24px;height:56px}
+header b{font-size:17px}header a{color:var(--mut);text-decoration:none;padding:17px 0;border-bottom:2px solid transparent}header a.on{color:var(--ink);border-color:var(--acc)}
+header .sp{flex:1}main{max-width:1060px;margin:0 auto;padding:28px 20px 60px}h1{font-size:24px;margin:0 0 4px}h2{font-size:17px;margin:28px 0 10px}
+.sub{color:var(--mut);margin:0 0 20px}.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:16px}
+button,.btn{font:inherit;border:1px solid var(--line);background:var(--card);border-radius:6px;padding:7px 14px;cursor:pointer;color:var(--ink);text-decoration:none;display:inline-block}
+button.pri{background:var(--acc);border-color:var(--acc);color:#fff}button:disabled{opacity:.5;cursor:not-allowed}button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+input,select{font:inherit;border:1px solid var(--line);border-radius:6px;padding:7px 10px;background:#fff;color:var(--ink);min-width:0}
+#drop{border:2px dashed #aab3bf;border-radius:10px;background:var(--card);padding:44px 20px;text-align:center;cursor:pointer}#drop.over{border-color:var(--acc);background:var(--acc2)}
+.row{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin-top:10px}.row .top{display:flex;gap:12px;align-items:center;justify-content:space-between}
+.bar{height:6px;background:#e9ecef;border-radius:4px;margin:9px 0 6px;overflow:hidden}.bar i{display:block;height:100%;background:var(--acc);transition:width .4s}
+.small{font-size:13px;color:var(--mut)}.err{color:#b42318;font-size:13px}.badge{font-size:12px;padding:2px 9px;border-radius:99px;font-weight:600;white-space:nowrap}
+.queued{background:#eceff3;color:#46505e}.processing{background:#dbeafe;color:#1d4ed8}.completed{background:#dcfae6;color:#067647}.needs_review{background:#fef3c7;color:#92400e}.failed{background:#fee4e2;color:#b42318}.warning{background:#fef3c7;color:#92400e}.error{background:#fee4e2;color:#b42318}.canceled{background:#fee4e2;color:#b42318}
+table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:8px;overflow:hidden}th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);font-size:14px}th{background:#fafbfc;color:var(--mut);font-weight:600}tr:last-child td{border:0}td.n,th.n{text-align:right}
+.filters{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}label{display:block;font-size:13px;color:var(--mut)}label input{width:100%;margin-top:3px}
+.wrap{overflow-x:auto}.ve{display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-bottom:1px solid var(--line)}.ve:last-child{border:0}
+.banner{background:#fef3c7;color:#92400e;border-radius:8px;padding:10px 14px;margin-bottom:16px}.ok{color:#067647}a.lnk{color:var(--acc)}
+dialog{border:1px solid var(--line);border-radius:10px;padding:20px;width:min(420px,92vw)}
+</style></head><body>
+<header><b>Document Intelligence</b><a href="#/" id="n1">Upload</a><a href="#/documents" id="n2">Documents</a><span class="sp"></span><button id="keyBtn">API key</button></header>
+<dialog id="dlg"><h2 style="margin-top:0">API key</h2><p class="small">Sent as the <code>apikey</code> header. It is stored only in this browser.</p><input id="keyIn" type="password" style="width:100%" autocomplete="off"><p style="text-align:right;margin:14px 0 0"><button id="keyCancel">Cancel</button> <button class="pri" id="keySave">Save</button></p></dialog>
+<main id="app"></main>
+<script>
+const API="https://assignment02.app.n8n.cloud/webhook";
+const OK=["pdf","jpg","jpeg","png","tif","tiff","xlsx","xls","csv"],FINAL=["completed","needs_review","failed","canceled"];
+const LABEL={queued:"Queued",processing:"Processing",completed:"Completed",needs_review:"Needs review",failed:"Failed",canceled:"Canceled"};
+const STEP={upload:[10,"Queued"],route:[20,"Routing"],text_extraction:[30,"Reading text"],ocr:[45,"Running OCR"],llm_extraction:[65,"Extracting fields"],validation:[85,"Validating"],embedding:[95,"Indexing"],reprocess:[5,"Reprocessing"],correction:[85,"Re-validating"]};
+const $=s=>document.querySelector(s),esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const key=()=>localStorage.getItem("di_key")||"",badge=s=>`<span class="badge ${esc(s)}">${esc(LABEL[s]||s)}</span>`;
+const money=(v,c)=>v==null?"–":Number(v).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})+(c?" "+esc(c):"");
+async function api(path,{method="GET",json,form,signal}={}){
+  const h={apikey:key()};let body;
+  if(json){h["Content-Type"]="application/json";body=JSON.stringify(json)}if(form)body=form;
+  let r;try{r=await fetch(API+path,{method,headers:h,body,signal})}catch(e){if(e.name==="AbortError")throw e;throw new Error("Network error. Check your connection and that the workflows are active.")}
+  let d=null;try{d=await r.json()}catch(e){}
+  if(!r.ok)throw new Error((d&&(d.error||d.message))||(r.status==403?"Wrong or missing API key":"Request failed ("+r.status+")"));
+  return d}
+/* API key dialog */
+$("#keyBtn").onclick=()=>{$("#keyIn").value=key();$("#dlg").showModal()};$("#keyCancel").onclick=()=>$("#dlg").close();
+$("#keySave").onclick=()=>{localStorage.setItem("di_key",$("#keyIn").value.trim());$("#dlg").close();route()};
+const banner=()=>key()?"":'<div class="banner">Add your API key (top right) before using the app.</div>';
+/* Upload */
+const rows=[];let uid=0,active=0,timer=null;
+function view_upload(){
+  $("#app").innerHTML=banner()+`<h1>Upload documents</h1><p class="sub">PDF, JPG, PNG, TIFF, XLSX, XLS or CSV, up to 20 MB each. Select several files at once.</p>
+  <div id="drop" tabindex="0" role="button"><b>Drop files here or click to browse</b><div class="small">Up to 3 files upload at the same time</div></div>
+  <input id="pick" type="file" multiple hidden accept=".pdf,.jpg,.jpeg,.png,.tif,.tiff,.xlsx,.xls,.csv">
+  <p style="text-align:right;margin:14px 0 0"><button id="clr">Clear finished</button></p><div id="list"></div>`;
+  const d=$("#drop"),p=$("#pick");d.onclick=()=>p.click();d.onkeydown=e=>{if(e.key=="Enter"||e.key==" ")p.click()};
+  p.onchange=()=>{add(p.files);p.value=""};
+  d.ondragover=e=>{e.preventDefault();d.classList.add("over")};d.ondragleave=()=>d.classList.remove("over");
+  d.ondrop=e=>{e.preventDefault();d.classList.remove("over");add(e.dataTransfer.files)};
+  $("#clr").onclick=()=>{for(let i=rows.length-1;i>=0;i--)if(rows[i].state=="done"||rows[i].state=="error"||rows[i].state=="canceled")rows.splice(i,1);draw()};draw()}
+function add(list){for(const f of list){const ext=f.name.split(".").pop().toLowerCase(),r={id:++uid,file:f,state:"waiting",stage:"Waiting",pct:0,status:"queued",controller:null};
+  if(!OK.includes(ext)){r.state="error";r.err="Unsupported file type: ."+ext}else if(f.size>20*1048576){r.state="error";r.err="File is larger than 20 MB"}rows.push(r)}draw();pump()}
+function pump(){while(active<3){const r=rows.find(x=>x.state=="waiting");if(!r)return;active++;send(r)}}
+async function send(r){r.state="uploading";r.stage="Uploading";r.pct=5;r.controller=new AbortController();draw();
+  try{const fd=new FormData();fd.append("file",r.file);const d=await api("/invoice-upload",{method:"POST",form:fd,signal:r.controller.signal});r.docId=d.document_id;r.state="polling";r.stage="Queued";r.pct=10;r.t0=Date.now();poll(r)}
+  catch(e){if(r.state==="canceled")return;r.state="error";r.err=e.message}finally{if(r.state!=="canceled")active--;draw();pump()}}
+async function poll(r){if(r.state!="polling")return;
+  try{const d=await api("/api-document?id="+r.docId,{signal:r.controller?r.controller.signal:undefined}),h=d.processing_history||[],l=h[h.length-1];
+    if(l&&STEP[l.step]){r.pct=Math.max(r.pct,STEP[l.step][0]);r.stage=STEP[l.step][1]}r.status=d.status;
+    if(FINAL.includes(d.status)){r.state="done";r.pct=100;r.stage=LABEL[d.status];r.err=d.status=="failed"?d.error_message||"Processing failed":null}
+    else if(Date.now()-r.t0>3e5){r.state="slow";r.stage="Taking longer than expected"}}catch(e){if(e.name==="AbortError"||r.state==="canceled")return;}
+  draw();if(r.state=="polling")r.pollTimeout=setTimeout(()=>poll(r),8000)}
+function draw(){const el=$("#list");if(!el)return;
+  el.innerHTML=rows.map(r=>`<div class="row"><div class="top"><div><b>${esc(r.file.name)}</b> <span class="small">${(r.file.size/1024).toFixed(0)} KB</span></div><div>${r.state=="error"?'<span class="badge failed">Error</span>':r.state=="canceled"?'<span class="badge canceled">Canceled</span>':badge(r.state=="done"?r.status:r.state=="waiting"?"queued":"processing")}</div></div>
+  <div class="bar"><i style="width:${r.state=="error"||r.state=="canceled"?0:r.pct}%"></i></div><div class="top"><span class="small">${esc(r.stage)}</span><span>${r.docId&&r.state=="done"?`<a class="lnk" href="#/doc/${r.docId}">View</a>`:""}${(r.state=="uploading"||r.state=="polling"||r.state=="waiting")?`<button data-c="${r.id}">Cancel</button>`:""}${r.state=="error"?`<button data-r="${r.id}">Retry</button>`:""}</span></div>${r.err?`<div class="err">${esc(r.err)}</div>`:""}</div>`).join("")||'<p class="small" style="margin-top:20px">No files yet. Drop some above.</p>';
+  el.querySelectorAll("[data-c]").forEach(b=>b.onclick=()=>{
+    const r=rows.find(x=>x.id==b.dataset.r||x.id==b.dataset.c);if(!r)return;
+    const wasUploading=r.state==="uploading";
+    if(r.controller)r.controller.abort();
+    if(r.pollTimeout)clearTimeout(r.pollTimeout);
+    r.state="canceled";r.stage="Canceled";r.err="Upload canceled by user.";
+    if(wasUploading)active=Math.max(0,active-1);
+    draw();pump();
+  });
+  el.querySelectorAll("[data-r]").forEach(b=>b.onclick=()=>{const r=rows.find(x=>x.id==b.dataset.r);r.state="waiting";r.err=null;r.stage="Waiting";draw();pump()})}
+/* Documents */
+async function view_docs(){
+  $("#app").innerHTML=banner()+`<h1>Documents</h1><p class="sub">Search past documents and open one to review it.</p>
+  <form class="filters" id="f"><input name="q" placeholder="Search text"><input name="supplier" placeholder="Supplier"><select name="status"><option value="">All statuses</option>${Object.keys(LABEL).map(s=>`<option value="${s}">${LABEL[s]}</option>`).join("")}</select>
+  <input name="from" type="date" title="Invoice date from"><input name="to" type="date" title="Invoice date to"><button class="pri">Search</button></form><div id="res" class="small">Loading…</div>`;
+  $("#f").onsubmit=e=>{e.preventDefault();load()};load();
+  async function load(){const p=new URLSearchParams();new FormData($("#f")).forEach((v,k)=>{if(v)p.set(k,v)});p.set("limit","100");
+    try{const d=await api("/api-documents?"+p),L=d.data||[];
+      $("#res").innerHTML=L.length?`<div class="wrap"><table><tr><th>File</th><th>Status</th><th>Invoice no.</th><th>Supplier</th><th>Date</th><th class="n">Total</th></tr>${L.map(x=>{const i=(x.invoices||[])[0]||{};return`<tr><td><a class="lnk" href="#/doc/${x.id}">${esc(x.filename)}</a></td><td>${badge(x.status)}</td><td>${esc(i.invoice_number||"–")}</td><td>${esc(i.supplier_name||"–")}</td><td>${esc(i.invoice_date||"–")}</td><td class="n">${money(i.total,i.currency)}</td></tr>`}).join("")}</table></div><p class="small">${L.length} document${L.length==1?"":"s"}</p>`:"No documents match. Clear the filters or upload a file.";
+    }catch(e){$("#res").innerHTML=`<span class="err">${esc(e.message)}</span>`}}}
+/* Detail */
+const FIELDS=[["invoice_number","Invoice number","text"],["invoice_date","Invoice date","date"],["supplier_name","Supplier","text"],["customer_name","Customer","text"],["subtotal","Subtotal","number"],["tax","Tax","number"],["total","Total","number"],["currency","Currency","text"]];
+async function view_detail(id){
+  const app=$("#app");app.innerHTML=banner()+'<p class="small">Loading…</p>';
+  let doc,st;try{[doc,st]=await Promise.all([api("/api-result?id="+id),api("/api-document?id="+id)])}catch(e){app.innerHTML=`<p><a class="lnk" href="#/documents">Back to documents</a></p><p class="err">${esc(e.message)}</p>`;return}
+  const inv=(doc.invoices||[])[0],items=inv?inv.line_items||[]:[],errs=(doc.validation_errors||[]).filter(e=>!e.resolved),hist=st.processing_history||[],busy=!FINAL.includes(doc.status);
+  app.innerHTML=banner()+`<p><a class="lnk" href="#/documents">Back to documents</a></p><div class="top" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div><h1>${esc(doc.filename)}</h1><span class="small">${esc(doc.file_type)} · ${st.attempts||0} attempt${st.attempts==1?"":"s"}</span> ${badge(doc.status)}</div><button id="rp" ${busy?"disabled":""}>Reprocess</button></div>
+  ${doc.error_message?`<p class="err">${esc(doc.error_message)}</p>`:""}<div id="msg" class="small"></div>
+  <h2>Validation</h2><div class="card">${errs.length?errs.map(e=>`<div class="ve"><span class="badge ${esc(e.severity)}">${esc(e.severity)}</span><div>${esc(e.message)}<div class="small">${esc(e.field||"")}</div></div></div>`).join(""):'<span class="ok">No open validation issues.</span>'}</div>
+  <h2>Extracted fields</h2>${inv?`<form class="card" id="ef"><div class="grid">${FIELDS.map(([k,l,t])=>`<label>${l}<input name="${k}" type="${t}" ${t=="number"?'step="0.01"':""} value="${esc(inv[k]??"")}"></label>`).join("")}</div><p style="margin:14px 0 0"><button class="pri">Save corrections</button></p></form>`:'<div class="card small">No invoice data was extracted for this document.</div>'}
+  <h2>Line items</h2>${items.length?`<div class="wrap"><table><tr><th>#</th><th>Description</th><th class="n">Qty</th><th class="n">Unit price</th><th class="n">Line total</th></tr>${items.map(x=>`<tr><td>${x.position??""}</td><td>${esc(x.description||"–")}</td><td class="n">${x.quantity??"–"}</td><td class="n">${money(x.unit_price)}</td><td class="n">${money(x.line_total)}</td></tr>`).join("")}</table></div>`:'<div class="card small">No line items.</div>'}
+  <h2>Processing history</h2><div class="card">${hist.map(h=>`<div class="ve"><span class="badge ${h.status=="failed"?"failed":"completed"}">${esc(h.step)}</span><div>${esc(h.detail||"")}<div class="small">${new Date(h.created_at).toLocaleString()}</div></div></div>`).join("")||'<span class="small">No history yet.</span>'}</div>`;
+  const msg=(t,c)=>$("#msg").innerHTML=`<span class="${c||""}">${esc(t)}</span>`;
+  $("#rp").onclick=async()=>{if(!confirm("Reprocess this document? Extracted data will be replaced."))return;
+    try{await api("/api-reprocess",{method:"POST",json:{document_id:id}});view_detail(id)}catch(e){msg(e.message,"err")}};
+  if($("#ef"))$("#ef").onsubmit=async e=>{e.preventDefault();const fd=new FormData(e.target),fields={};
+    FIELDS.forEach(([k])=>{const v=fd.get(k).trim();if(v!==String(inv[k]??""))fields[k]=v});
+    if(!Object.keys(fields).length)return msg("Nothing changed.");
+    try{await api("/api-correct",{method:"PATCH",json:{invoice_id:inv.id,fields}});msg("Saved. Validation is re-running…","ok");setTimeout(()=>{if(location.hash=="#/doc/"+id)view_detail(id)},3500)}catch(x){msg(x.message,"err")}};
+  clearTimeout(timer);if(busy)timer=setTimeout(()=>{if(location.hash=="#/doc/"+id)view_detail(id)},8000)}
+/* Router */
+function route(){clearTimeout(timer);const h=location.hash||"#/",m=h.match(/^#\/doc\/([0-9a-fA-F-]{36})$/);
+  $("#n1").className=h=="#/"?"on":"";$("#n2").className=h.startsWith("#/doc")?"on":"";
+  if(m)view_detail(m[1]);else if(h=="#/documents")view_docs();else view_upload()}
+addEventListener("hashchange",route);route();
+</script></body></html>

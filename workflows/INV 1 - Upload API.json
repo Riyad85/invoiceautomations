@@ -1,0 +1,349 @@
+{
+  "name": "INV 1 - Upload API",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "invoice-upload",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "name": "Upload Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        112
+      ],
+      "webhookId": "invoice-upload-0001",
+      "id": "df2d6043-d6a2-4dd6-84ee-ca90820143dd"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const item = $input.item;\nconst EXPECTED_KEY = 'CHANGE_ME_API_KEY';   // <-- put your own secret here\nconst allowed = ['pdf','jpg','jpeg','png','tiff','tif','xlsx','xls','csv'];\nconst headers = item.json.headers || {};\nconst bin = item.binary || {};\nconst key = Object.keys(bin)[0];\n\nfunction uuid() {\n  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {\n    const r = Math.random() * 16 | 0;\n    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);\n  });\n}\n\nlet error = null, statusCode = 400;\nif (headers['apikey'] !== EXPECTED_KEY) { error = 'Unauthorized'; statusCode = 401; }\nelse if (!key) { error = 'No file received. Send multipart/form-data with a file field.'; }\n\nlet filename = '', ext = '';\nif (!error) {\n  filename = bin[key].fileName || 'upload';\n  ext = (filename.split('.').pop() || '').toLowerCase();\n  if (!allowed.includes(ext)) error = 'Unsupported file type: .' + ext;\n}\n\nconst id = uuid();\nconst safe = filename.replace(/[^A-Za-z0-9._-]/g, '_');\nconst fileType = ext === 'jpeg' ? 'jpg' : ext === 'tif' ? 'tiff' : ext;\nconst out = { json: { valid: !error, error, statusCode, document_id: id, filename, file_type: fileType,\n                    storage_path: id + '/' + safe, mime: key ? bin[key].mimeType : null } };\nif (!error) out.binary = { data: bin[key] };\nreturn out;"
+      },
+      "name": "Validate & Prepare",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        112
+      ],
+      "id": "1bfda789-e288-4b18-a9fd-8f4190a6719c"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "File valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        480,
+        112
+      ],
+      "id": "8503625e-adfb-4691-af1d-3264b9f10ab8"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { error: $json.error } }}",
+        "options": {
+          "responseCode": "={{ $json.statusCode }}"
+        }
+      },
+      "name": "Respond Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        720,
+        288
+      ],
+      "id": "e32f2d51-1b61-4a98-829a-2f441df522e5"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://cqktvuidwccrynrdtstn.supabase.co/storage/v1/object/documents/{{ $json.storage_path }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-upsert",
+              "value": "true"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "binaryData",
+        "inputDataFieldName": "data",
+        "options": {}
+      },
+      "name": "Upload to Storage",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        0
+      ],
+      "id": "f6356bb5-32ac-4649-96c7-9dc49fe02677",
+      "credentials": {
+        "supabaseApi": {
+          "id": "V1MI9JvfC1ehb0SB",
+          "name": "Supabase account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "projectRef": "cqktvuidwccrynrdtstn",
+        "tableId": "documents",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "id",
+              "fieldValue": "={{ $('Validate & Prepare').item.json.document_id }}"
+            },
+            {
+              "fieldId": "filename",
+              "fieldValue": "={{ $('Validate & Prepare').item.json.filename }}"
+            },
+            {
+              "fieldId": "file_type",
+              "fieldValue": "={{ $('Validate & Prepare').item.json.file_type }}"
+            },
+            {
+              "fieldId": "storage_path",
+              "fieldValue": "={{ $('Validate & Prepare').item.json.storage_path }}"
+            },
+            {
+              "fieldId": "status",
+              "fieldValue": "queued"
+            }
+          ]
+        }
+      },
+      "name": "Create Document Row",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        960,
+        0
+      ],
+      "id": "97a54d94-e970-4062-84fb-d94757460285",
+      "credentials": {
+        "supabaseOAuth2Api": {
+          "id": "1KNKRmt8TUzKhH70",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "projectRef": "cqktvuidwccrynrdtstn",
+        "tableId": "processing_history",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "document_id",
+              "fieldValue": "={{ $json.id }}"
+            },
+            {
+              "fieldId": "step",
+              "fieldValue": "upload"
+            },
+            {
+              "fieldId": "status",
+              "fieldValue": "ok"
+            },
+            {
+              "fieldId": "detail",
+              "fieldValue": "File stored and queued"
+            }
+          ]
+        }
+      },
+      "name": "Log Upload",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        0
+      ],
+      "id": "7515de2c-f58e-4cc0-b2c3-26e22fef1c02",
+      "credentials": {
+        "supabaseOAuth2Api": {
+          "id": "1KNKRmt8TUzKhH70",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { document_id: $('Validate & Prepare').item.json.document_id, filename: $('Validate & Prepare').item.json.filename, status: 'queued' } }}",
+        "options": {
+          "responseCode": 202
+        }
+      },
+      "name": "Respond Queued",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1440,
+        0
+      ],
+      "id": "5eb871f8-f433-4524-bdfa-81091fd2ac00"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://assignment01.app.n8n.cloud/webhook/invoice-process",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ document_id: $('Validate & Prepare').item.json.document_id }) }}",
+        "options": {
+          "timeout": 3000
+        }
+      },
+      "name": "Trigger Processing (background)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1680,
+        0
+      ],
+      "id": "20615772-d50f-434a-8727-e3c19adbf0a4",
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Upload Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate & Prepare",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate & Prepare": {
+      "main": [
+        [
+          {
+            "node": "File valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "File valid?": {
+      "main": [
+        [
+          {
+            "node": "Upload to Storage",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload to Storage": {
+      "main": [
+        [
+          {
+            "node": "Create Document Row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Document Row": {
+      "main": [
+        [
+          {
+            "node": "Log Upload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Upload": {
+      "main": [
+        [
+          {
+            "node": "Respond Queued",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond Queued": {
+      "main": [
+        [
+          {
+            "node": "Trigger Processing (background)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": true
+  },
+  "versionId": "7ec3e297-6db4-4ae5-ba91-27401268237f",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "b4deb251f8d65ab13bdd5afbae9c1cfbe35e4235affa224dcc973fd084003ae4"
+  },
+  "nodeGroups": [],
+  "id": "K5RMdd5aR6GgRTxS",
+  "tags": []
+}

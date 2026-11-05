@@ -1,0 +1,33 @@
+file,type,expected_status,final_status,seconds,status_match,wrong_fields,flags_expected,flags_missing,flags_unexpected_errors,warnings,error_message,li
+digital_01.pdf,digital_pdf,completed,completed,8.8,True,,,,,,,"2/2 matched, 2 extracted"
+digital_02.pdf,digital_pdf,completed,completed,9.8,True,,,,,,,"2/2 matched, 2 extracted"
+digital_03.pdf,digital_pdf,completed,completed,8.8,True,,,,,,,"2/2 matched, 2 extracted"
+digital_04.pdf,digital_pdf,completed,completed,7.7,True,,,,,,,"5/5 matched, 5 extracted"
+digital_05.pdf,digital_pdf,completed,completed,7.6,True,,,,,,,"2/2 matched, 2 extracted"
+digital_06.pdf,digital_pdf,completed,completed,10.2,True,,,,,,,"5/5 matched, 5 extracted"
+digital_07.pdf,digital_pdf,completed,completed,7.5,True,,,,,,,"3/3 matched, 3 extracted"
+digital_08.pdf,digital_pdf,completed,completed,7.8,True,,,,,,,"4/4 matched, 4 extracted"
+scan_01.png,scanned,completed,completed,20.6,True,,,,,,,"3/3 matched, 3 extracted"
+scan_02.jpg,scanned,completed,completed,17.6,True,,,,,,,"2/2 matched, 2 extracted"
+scan_03.tiff,scanned,completed,completed,18.8,True,,,,,,,"2/2 matched, 2 extracted"
+scan_04.png,scanned,completed,failed,39.4,False,"invoice_number (truth='INV-2026-1012', got=None); invoice_date (truth='2026-04-06', got=None); supplier_name (truth='BrightSpark Electrical', got=None); customer_name (truth='Riverside Facilities', got=None); subtotal (truth=449.0, got=None); tax (truth=89.8, got=None); total (truth=538.8, got=None); currency (truth='GBP', got=None)",,,,,OCR: Try spacing your requests out using the batching settings under 'Options',"0/4 matched, 0 extracted"
+scan_05.jpg,scanned,completed,completed,20.8,True,,,,,,,"2/2 matched, 2 extracted"
+scan_06.pdf,scanned_pdf,completed,failed,24.2,False,"invoice_number (truth='INV-2026-1014', got=None); invoice_date (truth='2026-04-12', got=None); supplier_name (truth='BrightSpark Electrical', got=None); customer_name (truth='Apex HVAC Co.', got=None); subtotal (truth=896.05, got=None); tax (truth=179.21, got=None); total (truth=1075.26, got=None); currency (truth='GBP', got=None)",,,,,OCR: Try spacing your requests out using the batching settings under 'Options',"0/5 matched, 0 extracted"
+poor_quality_01.jpg,poor_quality,needs_review,completed,15.6,False,"invoice_number (truth='INV-2026-1015', got='INV-2020-1013'); invoice_date (truth='2026-04-15', got='2020-04-12')",,,,,,"1/2 matched, 2 extracted"
+poor_quality_02.jpg,poor_quality,needs_review,failed,6.9,False,"invoice_number (truth='INV-2026-1016', got=None); invoice_date (truth='2026-04-18', got=None); supplier_name (truth='Metro Pipe & Fittings', got=None); customer_name (truth='Riverside Facilities', got=None); subtotal (truth=355.0, got=None); tax (truth=71.0, got=None); total (truth=426.0, got=None); currency (truth='GBP', got=None)",,,,,OCR: Try spacing your requests out using the batching settings under 'Options',"0/2 matched, 0 extracted"
+error_total_mismatch.pdf,digital_pdf,needs_review,needs_review,7.3,True,,TOTAL_MISMATCH,,,,,"3/3 matched, 3 extracted"
+error_line_sum_mismatch.pdf,digital_pdf,needs_review,needs_review,7.3,True,,LINE_SUM_MISMATCH,,,,,"5/5 matched, 5 extracted"
+error_missing_date.pdf,digital_pdf,needs_review,needs_review,7.4,True,,MISSING_FIELD,,,,,"5/5 matched, 5 extracted"
+error_missing_customer.pdf,digital_pdf,needs_review,needs_review,7.8,True,,MISSING_FIELD,,,,,"4/4 matched, 4 extracted"
+dup_original.pdf,digital_pdf,completed,completed,7.5,True,,,,,,,"5/5 matched, 5 extracted"
+dup_resend.jpg,scanned,needs_review,failed,22.8,False,"invoice_number (truth='INV-2026-1021', got=None); invoice_date (truth='2026-05-03', got=None); supplier_name (truth='ClearAir Filters Ltd', got=None); customer_name (truth='Harbour Home Services', got=None); subtotal (truth=719.7, got=None); tax (truth=143.94, got=None); total (truth=863.64, got=None); currency (truth='GBP', got=None)",DUPLICATE_INVOICE,DUPLICATE_INVOICE,,,"OCR: 503 - ""{\n  \""error\"": {\n    \""code\"": 503,\n    \""message\"": \""This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.\"",\n    \""status\"": \""UNAVAILABLE\""\n  }\n}\n""","0/5 matched, 0 extracted"
+sheet_01.xlsx,xlsx,completed,completed,7.2,True,,,,,,,"4/4 matched, 4 extracted"
+sheet_02.xlsx,xlsx,completed,completed,8.4,True,,,,,,,"4/4 matched, 4 extracted"
+sheet_03.xlsx,xlsx,completed,completed,9.6,True,"invoice_number (truth='INV-2026-1024', got=None); invoice_date (truth='2026-05-12', got=None); supplier_name (truth='Northwind Cooling Ltd', got=None); customer_name (truth='Oakwood Property Group', got=None); subtotal (truth=196.7, got=None); tax (truth=39.34, got=None); total (truth=236.04, got=None); currency (truth='GBP', got=None)",,,,,,"0/3 matched, 0 extracted"
+table_01.csv,csv,completed,completed,8.6,True,,,,,,,"4/4 matched, 4 extracted"
+table_02.csv,csv,completed,completed,7.6,True,,,,,,,"4/4 matched, 4 extracted"
+corrupt_truncated.pdf,corrupted,failed,failed,2.3,True,,,,,,Invalid PDF structure.,
+corrupt_empty.pdf,corrupted,failed,failed,1.8,True,,,,,,"The PDF file is empty, i.e. its size is zero bytes.",
+corrupt_not_a_pdf.pdf,corrupted,failed,failed,4.9,True,,,,,,Invalid PDF structure.,
+corrupt_bad_image.png,corrupted,failed,failed,7.5,True,,,,,,"OCR: 400 - ""{\n  \""error\"": {\n    \""code\"": 400,\n    \""message\"": \""Unable to process input image. Please retry or report in https://developers.generativeai.google/guide/troubleshooting\"",\n    \""status\"": \""INVALID_ARGUMENT\""\n  }\n}\n""",
+multipage_01.pdf,multipage_pdf,completed,completed,20.7,True,,,,,,,"70/70 matched, 70 extracted"

@@ -1,0 +1,588 @@
+{
+  "name": "INV 3b - OCR (Vision)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "invoice-ocr",
+        "options": {}
+      },
+      "name": "OCR Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        208
+      ],
+      "webhookId": "invoice-ocr-0001",
+      "id": "dd70283f-9698-4300-a5aa-0d8ac19fa698"
+    },
+    {
+      "parameters": {
+        "url": "=https://cqktvuidwccrynrdtstn.supabase.co/rest/v1/documents?id=eq.{{ $json.body.document_id }}&select=*",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "options": {}
+      },
+      "name": "Get Document",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        224,
+        208
+      ],
+      "id": "c2f6cd50-10db-4319-a910-81e81689bb02",
+      "credentials": {
+        "supabaseApi": {
+          "id": "V1MI9JvfC1ehb0SB",
+          "name": "Supabase account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://cqktvuidwccrynrdtstn.supabase.co/storage/v1/object/documents/{{ $json.storage_path }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "name": "Download File",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        448,
+        208
+      ],
+      "id": "70e76558-7191-4ecb-9fa1-cfc2f4d9bd67",
+      "credentials": {
+        "supabaseApi": {
+          "id": "V1MI9JvfC1ehb0SB",
+          "name": "Supabase account 2"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "t1",
+              "leftValue": "={{ $('Get Document').first().json.file_type }}",
+              "rightValue": "tiff",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "Is TIFF?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        672,
+        208
+      ],
+      "id": "12025f73-3924-4cb2-a70b-ce9c286e932d"
+    },
+    {
+      "parameters": {
+        "operation": "resize",
+        "width": 100,
+        "height": 100,
+        "resizeOption": "percent",
+        "options": {
+          "format": "png"
+        }
+      },
+      "name": "Convert TIFF to PNG",
+      "type": "n8n-nodes-base.editImage",
+      "typeVersion": 1,
+      "position": [
+        880,
+        112
+      ],
+      "id": "16a5a4d6-140e-4c35-97f7-18d054becf92",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const type = $('Get Document').first().json.file_type;\nconst mimeMap = { pdf: 'application/pdf', jpg: 'image/jpeg', png: 'image/png', tiff: 'image/png' };\nconst buf = await this.helpers.getBinaryDataBuffer($itemIndex, 'data');\nreturn { json: { mime: mimeMap[type] || 'image/png', b64: buf.toString('base64'), size_kb: Math.round(buf.length / 1024) } };"
+      },
+      "name": "Prepare Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1104,
+        208
+      ],
+      "id": "cd8e6f55-181a-4fca-ad5c-4993db2f055d"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ contents: [{ parts: [ { text: `You are an OCR engine. Transcribe ALL text visible in this document exactly as printed, in reading order.\\nRules:\\n1) Do not summarise, translate, correct or add anything.\\n2) Keep tables as one row per line with columns separated by ' | '.\\n3) If a character, word or number cannot be read with confidence, write [illegible] in its place. NEVER guess digits.\\n4) For multi-page documents start each page with a line like --- PAGE 1 ---.\\n5) If the document has no readable text at all, output exactly: NO_READABLE_TEXT\\nOutput only the transcription, no comments.` }, { inline_data: { mime_type: $json.mime, data: $json.b64 } } ] }], generationConfig: { temperature: 0 } }) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "name": "Gemini OCR",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1328,
+        208
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "id": "5d896bbe-deb6-4abd-b149-33b775ae732a",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "3pO6PyE35Z0g2wpt",
+          "name": "gemini api"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const cand = ($json.candidates || [])[0] || {};\nconst parts = (cand.content && cand.content.parts) || [];\nconst text = parts.map(p => p.text || '').join('\\n').trim();\nconst reason = cand.finishReason || ($json.promptFeedback && $json.promptFeedback.blockReason) || 'unknown';\nif (!text) return { json: { ok: false, message: 'OCR returned no text (reason: ' + reason + ')' } };\nif (text === 'NO_READABLE_TEXT') return { json: { ok: false, message: 'No readable text found (image blank or too poor quality)' } };\nreturn { json: { ok: true, text, chars: text.length, illegible: (text.match(/\\[illegible\\]/g) || []).length } };"
+      },
+      "name": "Parse OCR",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1552,
+        112
+      ],
+      "id": "d1b5e383-a54c-4c1c-85bc-76d2a69a4cc9"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "k1",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "OCR OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1760,
+        112
+      ],
+      "id": "d1294c4a-e57d-4093-8aa3-ccdd6d16c0fb"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://cqktvuidwccrynrdtstn.supabase.co/rest/v1/extracted_text?on_conflict=document_id",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "resolution=merge-duplicates,return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ document_id: $('Get Document').first().json.id, method: 'vision_ocr', full_text: ($json.text || '').replace(/\\u0000/g, '') }) }}",
+        "options": {}
+      },
+      "name": "Save OCR Text",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2000,
+        0
+      ],
+      "id": "41871c17-0812-495c-9248-2d75e8b72037",
+      "credentials": {
+        "supabaseApi": {
+          "id": "V1MI9JvfC1ehb0SB",
+          "name": "Supabase account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://cqktvuidwccrynrdtstn.supabase.co/rest/v1/processing_history",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ document_id: $('Get Document').first().json.id, step: 'ocr', status: 'ok', detail: 'Vision OCR: ' + $('OCR OK?').first().json.chars + ' characters, ' + $('OCR OK?').first().json.illegible + ' illegible marks' }) }}",
+        "options": {}
+      },
+      "name": "Log OCR OK",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2240,
+        0
+      ],
+      "id": "a46a6023-5683-4703-b13f-01584f0777da",
+      "credentials": {
+        "supabaseApi": {
+          "id": "V1MI9JvfC1ehb0SB",
+          "name": "Supabase account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://assignment01.app.n8n.cloud/webhook/invoice-extract",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ document_id: $('Get Document').first().json.id }) }}",
+        "options": {
+          "timeout": 3000
+        }
+      },
+      "name": "Trigger Extraction (next stage)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2480,
+        0
+      ],
+      "id": "4a684261-a28d-42a5-8a61-75cc5c0ef428",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const raw = $json.error;\nconst msg = $json.message || (raw && raw.message) || (typeof raw === 'string' ? raw : 'OCR failed (file could not be read)');\nreturn { json: { message: 'OCR: ' + String(msg).slice(0, 480) } };"
+      },
+      "name": "Build Failure",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2000,
+        368
+      ],
+      "id": "6b11c4a2-845c-4ce2-9782-bb0b57b5528e"
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://cqktvuidwccrynrdtstn.supabase.co/rest/v1/documents?id=eq.{{ $('Get Document').first().json.id }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: 'failed', error_message: $json.message }) }}",
+        "options": {}
+      },
+      "name": "Mark Failed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2240,
+        368
+      ],
+      "id": "2b39b9ef-db4c-4c47-9e32-7e444495e241",
+      "credentials": {
+        "supabaseApi": {
+          "id": "V1MI9JvfC1ehb0SB",
+          "name": "Supabase account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://cqktvuidwccrynrdtstn.supabase.co/rest/v1/processing_history",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ document_id: $('Get Document').first().json.id, step: 'ocr', status: 'failed', detail: $('Build Failure').first().json.message }) }}",
+        "options": {}
+      },
+      "name": "Log Failed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2480,
+        368
+      ],
+      "id": "bed463eb-8951-4c8f-bd08-a26f732acb8f",
+      "credentials": {
+        "supabaseApi": {
+          "id": "V1MI9JvfC1ehb0SB",
+          "name": "Supabase account 2"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "OCR Webhook": {
+      "main": [
+        [
+          {
+            "node": "Get Document",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Document": {
+      "main": [
+        [
+          {
+            "node": "Download File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download File": {
+      "main": [
+        [
+          {
+            "node": "Is TIFF?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is TIFF?": {
+      "main": [
+        [
+          {
+            "node": "Convert TIFF to PNG",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert TIFF to PNG": {
+      "main": [
+        [
+          {
+            "node": "Prepare Request",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Request": {
+      "main": [
+        [
+          {
+            "node": "Gemini OCR",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini OCR": {
+      "main": [
+        [
+          {
+            "node": "Parse OCR",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse OCR": {
+      "main": [
+        [
+          {
+            "node": "OCR OK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OCR OK?": {
+      "main": [
+        [
+          {
+            "node": "Save OCR Text",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save OCR Text": {
+      "main": [
+        [
+          {
+            "node": "Log OCR OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log OCR OK": {
+      "main": [
+        [
+          {
+            "node": "Trigger Extraction (next stage)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Failure": {
+      "main": [
+        [
+          {
+            "node": "Mark Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Failed": {
+      "main": [
+        [
+          {
+            "node": "Log Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": true
+  },
+  "versionId": "6f9fe2da-2fb4-4614-b7ec-a8b13b450a59",
+  "meta": {
+    "instanceId": "b4deb251f8d65ab13bdd5afbae9c1cfbe35e4235affa224dcc973fd084003ae4"
+  },
+  "nodeGroups": [],
+  "id": "JDQWsB2suDyjvH4P",
+  "tags": []
+}

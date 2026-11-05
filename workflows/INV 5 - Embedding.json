@@ -1,0 +1,458 @@
+{
+  "name": "INV 5 - Embedding",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "invoice-embed",
+        "options": {}
+      },
+      "name": "Embed Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        112
+      ],
+      "webhookId": "invoice-embed-0001",
+      "id": "9770bf99-e599-4e23-bc28-938733479475"
+    },
+    {
+      "parameters": {
+        "url": "=https://cqktvuidwccrynrdtstn.supabase.co/rest/v1/documents?id=eq.{{ $json.body.document_id }}&select=*",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "options": {}
+      },
+      "name": "Get Document",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        224,
+        112
+      ],
+      "id": "bbbbf760-bcdb-45d6-b86a-7896befead64",
+      "credentials": {
+        "supabaseApi": {
+          "id": "V1MI9JvfC1ehb0SB",
+          "name": "Supabase account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://cqktvuidwccrynrdtstn.supabase.co/rest/v1/extracted_text?document_id=eq.{{ $json.id }}&select=full_text",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "options": {}
+      },
+      "name": "Get Text",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        448,
+        112
+      ],
+      "alwaysOutputData": true,
+      "id": "0391300d-432e-4231-9a48-c151936d5002",
+      "credentials": {
+        "supabaseApi": {
+          "id": "V1MI9JvfC1ehb0SB",
+          "name": "Supabase account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://cqktvuidwccrynrdtstn.supabase.co/rest/v1/invoices?document_id=eq.{{ $('Get Document').first().json.id }}&select=*&order=created_at.desc&limit=1",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "options": {}
+      },
+      "name": "Get Invoice",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        672,
+        112
+      ],
+      "alwaysOutputData": true,
+      "id": "ec678ebd-66e2-40b5-8b39-099682497386",
+      "credentials": {
+        "supabaseApi": {
+          "id": "V1MI9JvfC1ehb0SB",
+          "name": "Supabase account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const doc = $('Get Document').first().json;\nconst inv = $('Get Invoice').first().json || {};\nconst txt = (($('Get Text').first().json || {}).full_text || '').trim();\nif (!txt && !inv.id) return [{ json: { ok: false, error: { message: 'Nothing to embed (no text and no invoice data)' } } }];\nconst head = [\n  inv.invoice_number ? 'Invoice ' + inv.invoice_number : 'Document ' + doc.filename,\n  inv.supplier_name ? 'from ' + inv.supplier_name : null,\n  inv.customer_name ? 'to ' + inv.customer_name : null,\n  inv.invoice_date ? 'dated ' + inv.invoice_date : null,\n  inv.total !== null && inv.total !== undefined ? 'total ' + inv.total + (inv.currency ? ' ' + inv.currency : '') : null\n].filter(Boolean).join(' ');\nconst input_text = (head + '.\\n' + txt).slice(0, 6000);\nconst meta = { document_id: doc.id, filename: doc.filename, file_type: doc.file_type, status: doc.status,\n  invoice_number: inv.invoice_number, supplier_name: inv.supplier_name, customer_name: inv.customer_name,\n  invoice_date: inv.invoice_date, currency: inv.currency, total: inv.total === null || inv.total === undefined ? null : Number(inv.total),\n  summary: head.slice(0, 300) };\nObject.keys(meta).forEach(k => { if (meta[k] === null || meta[k] === undefined) delete meta[k]; });  // Pinecone rejects nulls\nreturn [{ json: { ok: true, input_text, metadata: meta, doc_id: doc.id } }];"
+      },
+      "name": "Build Embedding Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        112
+      ],
+      "id": "8b963de3-ded7-4be4-8e5a-844cad7013ba"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "ok1",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "Has input?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1104,
+        112
+      ],
+      "id": "f834ff5c-0244-4eb2-bdbd-a62a9dd188f4"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'models/gemini-embedding-001', content: { parts: [{ text: $json.input_text }] }, taskType: 'RETRIEVAL_DOCUMENT', outputDimensionality: 768 }) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "name": "Gemini Embed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1328,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "id": "72c1bfb9-49c8-4dce-953e-cfa72ecdbd44",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "3pO6PyE35Z0g2wpt",
+          "name": "gemini api"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const vals = $json.embedding && $json.embedding.values;\nif (!Array.isArray(vals) || vals.length === 0) throw new Error('Embedding model returned no vector');\nconst src = $('Build Embedding Input').first().json;\nreturn [{ json: { dims: vals.length, body: { vectors: [{ id: src.doc_id, values: vals, metadata: src.metadata }] } } }];"
+      },
+      "name": "Build Vector",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1552,
+        0
+      ],
+      "id": "959a4aa8-df47-48d3-a96e-f4dc2318cf99",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://invoices-rw6yt6v.svc.aped-4627-b74a.pinecone.io/vectors/upsert",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Pinecone-API-Version",
+              "value": "2025-04"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "name": "Pinecone Upsert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1760,
+        0
+      ],
+      "id": "74fc2875-400e-4cce-8578-68df443d730a",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "rFIbxJvo82yo8C8M",
+          "name": "pinecone api"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://cqktvuidwccrynrdtstn.supabase.co/rest/v1/processing_history",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ document_id: $('Get Document').first().json.id, step: 'embedding', status: 'ok', detail: 'Embedded (' + $('Build Vector').first().json.dims + ' dimensions) and stored in Pinecone' }) }}",
+        "options": {}
+      },
+      "name": "Log Embedding OK",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1984,
+        0
+      ],
+      "id": "39f05975-12d8-45b5-ae31-7edfcd2a63c6",
+      "credentials": {
+        "supabaseApi": {
+          "id": "V1MI9JvfC1ehb0SB",
+          "name": "Supabase account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const raw = $json.error;\nconst msg = $json.message || (raw && raw.message) || (typeof raw === 'string' ? raw : 'Embedding step failed');\nreturn [{ json: { message: 'Embedding: ' + String(msg).slice(0, 480) } }];"
+      },
+      "name": "Build Failure",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1552,
+        272
+      ],
+      "id": "232735f3-ecb6-4c43-af9a-f373fb8ea5a6"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://cqktvuidwccrynrdtstn.supabase.co/rest/v1/processing_history",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ document_id: $('Get Document').first().json.id, step: 'embedding', status: 'failed', detail: $('Build Failure').first().json.message }) }}",
+        "options": {}
+      },
+      "name": "Log Embedding Failed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1760,
+        272
+      ],
+      "id": "c8d2cd06-8d02-4791-836b-6c3898dadfcf",
+      "credentials": {
+        "supabaseApi": {
+          "id": "V1MI9JvfC1ehb0SB",
+          "name": "Supabase account 2"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Embed Webhook": {
+      "main": [
+        [
+          {
+            "node": "Get Document",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Document": {
+      "main": [
+        [
+          {
+            "node": "Get Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Text": {
+      "main": [
+        [
+          {
+            "node": "Get Invoice",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Invoice": {
+      "main": [
+        [
+          {
+            "node": "Build Embedding Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Embedding Input": {
+      "main": [
+        [
+          {
+            "node": "Has input?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has input?": {
+      "main": [
+        [
+          {
+            "node": "Gemini Embed",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini Embed": {
+      "main": [
+        [
+          {
+            "node": "Build Vector",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Vector": {
+      "main": [
+        [
+          {
+            "node": "Pinecone Upsert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pinecone Upsert": {
+      "main": [
+        [
+          {
+            "node": "Log Embedding OK",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Failure": {
+      "main": [
+        [
+          {
+            "node": "Log Embedding Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": true
+  },
+  "versionId": "0a384874-b277-462e-a267-cf462708e402",
+  "meta": {
+    "instanceId": "b4deb251f8d65ab13bdd5afbae9c1cfbe35e4235affa224dcc973fd084003ae4"
+  },
+  "nodeGroups": [],
+  "id": "SCGfEfMSo4qXuaoW",
+  "tags": []
+}

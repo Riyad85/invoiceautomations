@@ -1,0 +1,507 @@
+{
+  "name": "INV 4 - Validation",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "invoice-validate",
+        "options": {}
+      },
+      "name": "Validate Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -800,
+        176
+      ],
+      "webhookId": "invoice-validate-0001",
+      "id": "3c0be579-d0f0-4689-ae80-ef3097b7bb77"
+    },
+    {
+      "parameters": {
+        "url": "=https://cqktvuidwccrynrdtstn.supabase.co/rest/v1/documents?id=eq.{{ $json.body.document_id }}&select=*",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "options": {}
+      },
+      "name": "Get Document",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -576,
+        176
+      ],
+      "id": "c4c802c4-58c2-4dde-8d75-d146b185b0dc",
+      "credentials": {
+        "supabaseApi": {
+          "id": "V1MI9JvfC1ehb0SB",
+          "name": "Supabase account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "DELETE",
+        "url": "=https://cqktvuidwccrynrdtstn.supabase.co/rest/v1/validation_errors?document_id=eq.{{ $json.id }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Clear Old Errors",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -368,
+        176
+      ],
+      "id": "24364f0c-312f-4506-ac5a-16677477d392",
+      "credentials": {
+        "supabaseApi": {
+          "id": "V1MI9JvfC1ehb0SB",
+          "name": "Supabase account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://cqktvuidwccrynrdtstn.supabase.co/rest/v1/invoices?document_id=eq.{{ $('Get Document').first().json.id }}&select=*&order=created_at.desc&limit=1",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "options": {}
+      },
+      "name": "Get Invoice",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -144,
+        176
+      ],
+      "alwaysOutputData": true,
+      "id": "1a33dc5b-fc92-4e06-93c9-9239b718c008",
+      "credentials": {
+        "supabaseApi": {
+          "id": "V1MI9JvfC1ehb0SB",
+          "name": "Supabase account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://cqktvuidwccrynrdtstn.supabase.co/rest/v1/line_items?invoice_id=eq.{{ $('Get Invoice').first().json.id || '00000000-0000-0000-0000-000000000000' }}&select=*&order=position.asc",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "options": {}
+      },
+      "name": "Get Line Items",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        80,
+        176
+      ],
+      "alwaysOutputData": true,
+      "id": "43c50873-34ec-47d0-9645-251356a0a063",
+      "credentials": {
+        "supabaseApi": {
+          "id": "V1MI9JvfC1ehb0SB",
+          "name": "Supabase account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=https://cqktvuidwccrynrdtstn.supabase.co/rest/v1/invoices?invoice_number=eq.{{ encodeURIComponent($('Get Invoice').first().json.invoice_number || '__none__') }}&document_id=neq.{{ $('Get Document').first().json.id }}&select=id,document_id,supplier_name,created_at",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "options": {}
+      },
+      "name": "Get Possible Duplicates",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        304,
+        176
+      ],
+      "alwaysOutputData": true,
+      "executeOnce": true,
+      "id": "f846502e-31a3-4533-8027-0441a4295fd5",
+      "credentials": {
+        "supabaseApi": {
+          "id": "V1MI9JvfC1ehb0SB",
+          "name": "Supabase account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const doc = $('Get Document').first().json;\nconst inv = $('Get Invoice').first().json || {};\nconst items = $('Get Line Items').all().map(i => i.json).filter(r => r && r.id);\nconst dups = $input.all().map(i => i.json).filter(r => r && r.id);\nconst errors = [];\nconst TOL = 0.011;               // rounding tolerance (0.01)\nconst LOW_CONF = 0.6;            // below this the value is sent to manual review\nconst add = (field, rule, severity, message) => errors.push({\n  document_id: doc.id, invoice_id: inv.id || null, field, code: rule.toUpperCase(), severity, message });\nconst n = v => (v === null || v === undefined || v === '') ? null : Number(v);\nconst bad = v => v !== null && !Number.isFinite(v);\n\nif (!inv.id) {\n  add('invoice', 'no_extraction', 'error', 'No extracted invoice data found for this document');\n} else {\n  // 1. Missing fields\n  const required = ['invoice_number', 'invoice_date', 'supplier_name', 'customer_name', 'total'];\n  const optional = ['subtotal', 'tax', 'currency'];\n  for (const f of required) if (inv[f] === null || inv[f] === undefined || inv[f] === '')\n    add(f, 'missing_field', 'error', 'Required field is missing: ' + f);\n  for (const f of optional) if (inv[f] === null || inv[f] === undefined || inv[f] === '')\n    add(f, 'missing_field', 'warning', 'Field is missing: ' + f);\n  if (items.length === 0) add('line_items', 'no_line_items', 'warning', 'No line items were extracted');\n\n  // 2. Numbers: valid and not negative\n  const sub = n(inv.subtotal), tax = n(inv.tax), tot = n(inv.total);\n  for (const [f, v] of [['subtotal', sub], ['tax', tax], ['total', tot]]) {\n    if (bad(v)) add(f, 'not_a_number', 'error', f + ' is not a valid number');\n    else if (v !== null && v < 0) add(f, 'negative_value', 'error', f + ' is negative: ' + v);\n  }\n  if (tot !== null && !bad(tot) && tot === 0) add('total', 'zero_total', 'warning', 'Total is zero');\n\n  // 3. subtotal + tax = total\n  if (sub !== null && tax !== null && tot !== null && ![sub, tax, tot].some(bad)) {\n    if (Math.abs(sub + tax - tot) > TOL)\n      add('total', 'total_mismatch', 'error',\n        'Subtotal ' + sub + ' + tax ' + tax + ' = ' + (Math.round((sub + tax) * 100) / 100) + ', but total is ' + tot);\n  }\n\n  // 4. line items: qty x price = line total, and sum of lines = subtotal\n  let sum = 0, counted = 0;\n  items.forEach((it, idx) => {\n    const q = n(it.quantity), p = n(it.unit_price), lt = n(it.line_total);\n    const label = 'Line ' + (it.position || idx + 1);\n    if ([q, p, lt].some(bad)) { add('line_items', 'not_a_number', 'error', label + ' has a non-numeric value'); return; }\n    if ((q !== null && q < 0) || (p !== null && p < 0) || (lt !== null && lt < 0))\n      add('line_items', 'negative_value', 'error', label + ' has a negative value');\n    if (q !== null && p !== null && lt !== null && Math.abs(q * p - lt) > TOL)\n      add('line_items', 'line_total_mismatch', 'error',\n        label + ': ' + q + ' x ' + p + ' = ' + (Math.round(q * p * 100) / 100) + ', but line total is ' + lt);\n    if (lt !== null) { sum += lt; counted++; }\n  });\n  if (counted > 0 && sub !== null && !bad(sub) && Math.abs(sum - sub) > TOL)\n    add('subtotal', 'line_sum_mismatch', 'error',\n      'Line items add up to ' + (Math.round(sum * 100) / 100) + ', but subtotal is ' + sub);\n\n  // 5. Duplicate invoice (same invoice number + same supplier in another document)\n  const norm = s => (s || '').toString().toLowerCase().replace(/[^a-z0-9]/g, '');\n  if (inv.invoice_number && inv.supplier_name) {\n    const same = dups.filter(d => norm(d.supplier_name) === norm(inv.supplier_name) && new Date(d.created_at) < new Date(inv.created_at));\n    if (same.length > 0)\n      add('invoice_number', 'duplicate_invoice', 'error',\n        'Same invoice number and supplier already exist in document ' + same[0].document_id);\n  }\n\n  // 6. Low model confidence\n  const conf = inv.confidence || {};\n  for (const f of required.concat(optional)) {\n    const c = Number(conf[f]);\n    if (inv[f] !== null && inv[f] !== undefined && Number.isFinite(c) && c < LOW_CONF)\n      add(f, 'low_confidence', 'warning', 'Model confidence for ' + f + ' is low (' + c + ')');\n  }\n}\n\nconst errCount = errors.filter(e => e.severity === 'error').length;\nconst warnCount = errors.length - errCount;\nconst lowConf = errors.some(e => e.code === 'LOW_CONFIDENCE');\nconst status = (errCount > 0 || lowConf) ? 'needs_review' : 'completed';\nreturn [{ json: { errors, has_errors: errors.length > 0, error_count: errCount,\n                  warning_count: warnCount, status } }];"
+      },
+      "name": "Validate Rules",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        528,
+        176
+      ],
+      "id": "ceb3d34d-6f71-47ed-9c38-e2eb7a8cfcdf"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "e1",
+              "leftValue": "={{ $json.has_errors }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "Any flags?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        752,
+        176
+      ],
+      "id": "e2a4f471-b3d0-4ce6-921f-d323f5c5bdaa"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://cqktvuidwccrynrdtstn.supabase.co/rest/v1/validation_errors",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('Validate Rules').first().json.errors) }}",
+        "options": {}
+      },
+      "name": "Save Validation Errors",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        992,
+        64
+      ],
+      "id": "eafa019d-86a2-4c2a-aaee-b346b4b46f12",
+      "credentials": {
+        "supabaseApi": {
+          "id": "V1MI9JvfC1ehb0SB",
+          "name": "Supabase account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://cqktvuidwccrynrdtstn.supabase.co/rest/v1/documents?id=eq.{{ $('Get Document').first().json.id }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: $('Validate Rules').first().json.status, error_message: null }) }}",
+        "options": {}
+      },
+      "name": "Set Final Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1232,
+        176
+      ],
+      "id": "576b65ea-baca-4f90-a4f2-91cca233c173",
+      "credentials": {
+        "supabaseApi": {
+          "id": "V1MI9JvfC1ehb0SB",
+          "name": "Supabase account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://cqktvuidwccrynrdtstn.supabase.co/rest/v1/invoices?document_id=eq.{{ $('Get Document').first().json.id }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ needs_review: $('Validate Rules').first().json.status === 'needs_review' }) }}",
+        "options": {}
+      },
+      "name": "Flag Invoice Row",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1472,
+        176
+      ],
+      "id": "1d153cd0-0234-424b-8857-99334f2e22c9",
+      "credentials": {
+        "supabaseApi": {
+          "id": "V1MI9JvfC1ehb0SB",
+          "name": "Supabase account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://cqktvuidwccrynrdtstn.supabase.co/rest/v1/processing_history",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ document_id: $('Get Document').first().json.id, step: 'validation', status: 'ok', detail: $('Validate Rules').first().json.error_count + ' errors, ' + $('Validate Rules').first().json.warning_count + ' warnings -> ' + $('Validate Rules').first().json.status }) }}",
+        "options": {}
+      },
+      "name": "Log Validation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1712,
+        176
+      ],
+      "id": "64810f34-96d2-4d93-9f6c-7928d970c1cb",
+      "credentials": {
+        "supabaseApi": {
+          "id": "V1MI9JvfC1ehb0SB",
+          "name": "Supabase account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://assignment01.app.n8n.cloud/webhook/invoice-embed",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ document_id: $('Get Document').first().json.id }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1920,
+        176
+      ],
+      "id": "747a18be-af6b-4cbb-9266-a873bbede9c7",
+      "name": "HTTP Request"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Validate Webhook": {
+      "main": [
+        [
+          {
+            "node": "Get Document",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Document": {
+      "main": [
+        [
+          {
+            "node": "Clear Old Errors",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clear Old Errors": {
+      "main": [
+        [
+          {
+            "node": "Get Invoice",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Invoice": {
+      "main": [
+        [
+          {
+            "node": "Get Line Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Line Items": {
+      "main": [
+        [
+          {
+            "node": "Get Possible Duplicates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Possible Duplicates": {
+      "main": [
+        [
+          {
+            "node": "Validate Rules",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Rules": {
+      "main": [
+        [
+          {
+            "node": "Any flags?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Any flags?": {
+      "main": [
+        [
+          {
+            "node": "Save Validation Errors",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Set Final Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Validation Errors": {
+      "main": [
+        [
+          {
+            "node": "Set Final Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Final Status": {
+      "main": [
+        [
+          {
+            "node": "Flag Invoice Row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Flag Invoice Row": {
+      "main": [
+        [
+          {
+            "node": "Log Validation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Validation": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": true
+  },
+  "versionId": "6a04c391-e64f-4d06-904f-f4f00cb4f0cf",
+  "meta": {
+    "instanceId": "b4deb251f8d65ab13bdd5afbae9c1cfbe35e4235affa224dcc973fd084003ae4"
+  },
+  "nodeGroups": [],
+  "id": "r1GSz41kjic9hz2v",
+  "tags": []
+}
